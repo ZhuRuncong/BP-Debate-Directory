@@ -1,0 +1,333 @@
+[
+ {
+  "payload": {
+   "chair": "judy chair",
+   "row": 10,
+   "scale": 3.0,
+   "seq": 1,
+   "stage": "P",
+   "t": 5173,
+   "teams": [
+    {
+     "iron": false,
+     "roster": [
+      "ann alpha",
+      "bob alpha"
+     ],
+     "side": "og",
+     "sort": 4.0,
+     "speaks": [
+      78.0,
+      null
+     ],
+     "team": "alpha a"
+    },
+    {
+     "iron": false,
+     "roster": [
+      "ed beta",
+      "fay beta"
+     ],
+     "side": "oo",
+     "sort": 3.0,
+     "speaks": [
+      75.5,
+      75.0
+     ],
+     "team": "beta a"
+    },
+    {
+     "iron": false,
+     "roster": [
+      "ivo gamma",
+      "jo gamma"
+     ],
+     "side": "cg",
+     "sort": 2.0,
+     "speaks": [
+      73.5,
+      73.0
+     ],
+     "team": "gamma a"
+    },
+    {
+     "iron": false,
+     "roster": [
+      "mia delta",
+      "edward delta"
+     ],
+     "side": "co",
+     "sort": 1.0,
+     "speaks": [
+      71.5,
+      71.0
+     ],
+     "team": "delta a"
+    }
+   ]
+  },
+  "row": 10,
+  "stage": "P",
+  "t": 5173
+ },
+ {
+  "payload": {
+   "chair": "cody chair",
+   "row": 10,
+   "scale": 3.0,
+   "seq": 1,
+   "stage": "P",
+   "t": 5173,
+   "teams": [
+    {
+     "iron": false,
+     "roster": [
+      "cara alpha",
+      "dan alpha"
+     ],
+     "side": "og",
+     "sort": 4.0,
+     "speaks": [
+      76.5,
+      76.0
+     ],
+     "team": "alpha b"
+    },
+    {
+     "iron": false,
+     "roster": [
+      "gus beta",
+      "hana beta"
+     ],
+     "side": "oo",
+     "sort": 3.0,
+     "speaks": [
+      74.5,
+      74.0
+     ],
+     "team": "beta b"
+    },
+    {
+     "iron": false,
+     "roster": [
+      "kim gamma",
+      "leo gamma"
+     ],
+     "side": "cg",
+     "sort": 2.0,
+     "speaks": [
+      72.5,
+      72.0
+     ],
+     "team": "gamma b"
+    },
+    {
+     "iron": false,
+     "roster": [
+      "oli delta",
+      "pia delta"
+     ],
+     "side": "co",
+     "sort": 1.0,
+     "speaks": [
+      70.5,
+      70.0
+     ],
+     "team": "delta b"
+    }
+   ]
+  },
+  "row": 10,
+  "stage": "P",
+  "t": 5173
+ },
+ {
+  "payload": {
+   "chair": null,
+   "row": 10,
+   "scale": 3.0,
+   "seq": 2,
+   "stage": "P",
+   "t": 5173,
+   "teams": [
+    {
+     "iron": false,
+     "roster": [
+      "ann alpha",
+      "bob alpha"
+     ],
+     "side": "og",
+     "sort": 4.0,
+     "speaks": null,
+     "team": "alpha a"
+    },
+    {
+     "iron": false,
+     "roster": [
+      "gus beta",
+      "hana beta"
+     ],
+     "side": "oo",
+     "sort": 3.0,
+     "speaks": null,
+     "team": "beta b"
+    },
+    {
+     "iron": false,
+     "roster": [
+      "ivo gamma",
+      "jo gamma"
+     ],
+     "side": "cg",
+     "sort": 2.0,
+     "speaks": null,
+     "team": "gamma a"
+    },
+    {
+     "iron": false,
+     "roster": [
+      "oli delta",
+      "pia delta"
+     ],
+     "side": "co",
+     "sort": 1.0,
+     "speaks": null,
+     "team": "delta b"
+    }
+   ]
+  },
+  "row": 10,
+  "stage": "P",
+  "t": 5173
+ },
+ {
+  "payload": {
+   "chair": null,
+   "row": 10,
+   "scale": 3.0,
+   "seq": 2,
+   "stage": "P",
+   "t": 5173,
+   "teams": [
+    {
+     "iron": false,
+     "roster": [
+      "cara alpha",
+      "dan alpha"
+     ],
+     "side": "og",
+     "sort": 4.0,
+     "speaks": [
+      77.0,
+      76.5
+     ],
+     "team": "alpha b"
+    },
+    {
+     "iron": false,
+     "roster": [
+      "ed beta",
+      "fay beta"
+     ],
+     "side": "oo",
+     "sort": 3.0,
+     "speaks": [
+      76.0,
+      75.5
+     ],
+     "team": "beta a"
+    },
+    {
+     "iron": false,
+     "roster": [
+      "kim gamma",
+      "leo gamma"
+     ],
+     "side": "cg",
+     "sort": 2.0,
+     "speaks": [
+      73.0,
+      72.5
+     ],
+     "team": "gamma b"
+    },
+    {
+     "iron": false,
+     "roster": [
+      "mia delta",
+      "edward delta"
+     ],
+     "side": "co",
+     "sort": 1.0,
+     "speaks": [
+      72.0,
+      71.5
+     ],
+     "team": "delta a"
+    }
+   ]
+  },
+  "row": 10,
+  "stage": "P",
+  "t": 5173
+ },
+ {
+  "payload": {
+   "chair": "judy chair",
+   "row": 10,
+   "scale": 3.0,
+   "seq": 3,
+   "stage": "E",
+   "t": 5173,
+   "teams": [
+    {
+     "iron": false,
+     "roster": [
+      "ann alpha",
+      "bob alpha"
+     ],
+     "side": "og",
+     "sort": 2.0,
+     "speaks": null,
+     "team": "alpha a"
+    },
+    {
+     "iron": false,
+     "roster": [
+      "cara alpha",
+      "dan alpha"
+     ],
+     "side": "oo",
+     "sort": 1.0,
+     "speaks": null,
+     "team": "alpha b"
+    },
+    {
+     "iron": false,
+     "roster": [
+      "ed beta",
+      "fay beta"
+     ],
+     "side": "cg",
+     "sort": 1.0,
+     "speaks": null,
+     "team": "beta a"
+    },
+    {
+     "iron": false,
+     "roster": [
+      "kim gamma",
+      "leo gamma"
+     ],
+     "side": "co",
+     "sort": 1.0,
+     "speaks": null,
+     "team": "gamma b"
+    }
+   ]
+  },
+  "row": 10,
+  "stage": "E",
+  "t": 5173
+ }
+]

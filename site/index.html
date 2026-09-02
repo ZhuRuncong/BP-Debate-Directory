@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>BP Debate Directory</title>
+<link rel="stylesheet" href="/style.css">
+
+</head>
+<body>
+<div id="loading"></div>
+<div id="app">
+  <header><div class="hwrap">
+    <h1>BP Debate Directory</h1>
+    <nav>
+      <button data-v="board" class="on">Debaters</button>
+      <button data-v="tours">Tournaments</button>
+      <button data-v="insts">Institutions</button>
+      <button data-v="judges">Judges</button>
+      <button data-v="balance">Motions</button>
+      <button data-v="disclaimer">Disclaimer</button>
+      <a href="https://opencollective.com/tabbycat/donate?interval=oneTime&amp;amount=5"
+         target="_blank" rel="noopener">Donate to Tabbycat ↗</a>
+    </nav>
+    <div class="grow"></div>
+    <div id="gsearch">
+      <input id="q" type="search" placeholder="Search" autocomplete="off" spellcheck="false">
+      <div id="sugg"></div>
+    </div>
+  </div></header>
+  <main id="main"></main>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

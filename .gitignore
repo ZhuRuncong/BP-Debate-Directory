@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.env
+*.log
+*.bin
+*.br
+.venv/
+dist/
+build/
+*.egg-info/
+server/server
+server/server.exe
+tagger_model/
+*.md
+docs/
