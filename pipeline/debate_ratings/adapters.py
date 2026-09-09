@@ -54,6 +54,6 @@ def add_extras(tab, games_iter, speak_scale, motions=False, max_day=None,
                 sd = sides[i] if i < len(sides) else ""
                 if sd:
                     lineup.append((motion, sd))
-        tab.add_ballot(lineups, r, day=g["t"], continuous=cont, tag="raw")
+        tab.add_observation(lineups, r, day=g["t"], continuous=cont, tag="raw")
         n += 1
     return n
