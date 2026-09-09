@@ -68,3 +68,27 @@ def test_build_board_hides_named_institutions():
     assert all("alpha university" not in r[9] for r in rows)
     assert all(r[8] != "alpha university" for r in rows)
     assert all(k != "alpha university" for at in inst_at for k in at)
+
+
+def _world_that_returns_to_its_first_institution():
+    """Four people go Alpha → Beta → Alpha; four stay at Beta so it registers."""
+    w = payload.World()
+    w.tours = [{"i": t, "row": t + 1, "n": "Fixture Open %d" % t,
+                "d": "202%d-03-01" % (4 + t), "rounds": [], "xm": [],
+                "field": 8, "partial": 0} for t in range(3)]
+    for i in range(8):
+        seq = (["Alpha University", "Beta College", "Alpha University"] if i < 4
+               else ["Beta College"] * 3)
+        w.careers[i] = [[t, "%s %s" % (seq[t], "ABCD"[i % 4]), [], []] for t in range(3)]
+    return w
+
+
+def test_hiding_a_middle_affiliation_leaves_no_repeat():
+    board.configure({"skip": [], "alias": {}})
+    w = _world_that_returns_to_its_first_institution()
+
+    rows, _at, _names, _aka = payload.build_board(w, 8, set())
+    assert rows[0][9] == ["alpha university", "beta college", "alpha university"]
+
+    rows, _at, _names, _aka = payload.build_board(w, 8, {"beta college"})
+    assert rows[0][9] == ["alpha university"]

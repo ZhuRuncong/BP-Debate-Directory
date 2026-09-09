@@ -1,6 +1,7 @@
 import collections
 import datetime
 import gzip
+import itertools
 import json
 import math
 import re
@@ -790,7 +791,10 @@ def build_board(w: World, n_players: int, hidden: set):
                 finals += 1
         rec_sp = allsp[-30:]
         it = insts.get(i) or {}
-        own = [k for k, _n in (it.get("insts") or []) if k not in hidden]
+        # insts is a run of affiliations over time; dropping one must not
+        # leave its neighbours showing as a repeat.
+        kept = (k for k, _n in (it.get("insts") or []) if k not in hidden)
+        own = [k for k, _ in itertools.groupby(kept)]
         primary = it.get("inst")
         board_rows.append([len(car), nr,
                            round(sum(rec_sp) / len(rec_sp), 2) if rec_sp else None,
