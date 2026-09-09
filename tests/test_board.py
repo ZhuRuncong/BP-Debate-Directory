@@ -92,3 +92,11 @@ def test_hiding_a_middle_affiliation_leaves_no_repeat():
 
     rows, _at, _names, _aka = payload.build_board(w, 8, {"beta college"})
     assert rows[0][9] == ["alpha university"]
+
+
+def test_division_of_strips_generic_round_words():
+    assert payload.division_of("Grand Final") == ""
+    assert payload.division_of("Open Grand Final") == ""
+    assert payload.division_of("Partial Finals") == "Partial"
+    assert payload.division_of("Pre-Uni Finals") == "Pre Uni"
+    assert payload.division_of("Am-Am Final") == "Am Am"

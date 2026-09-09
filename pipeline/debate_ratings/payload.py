@@ -86,6 +86,17 @@ def elim_info(name):
     return cat, depth
 
 
+GENERIC_ROUND = re.compile(r"^(?:the|a|an|open|grand|main|championship|final|finals|round)$")
+
+
+def division_of(name):
+    """Whatever qualifies a round name beyond a plain final — "Partial Finals"
+    is the Partial division's final, not a second Open one."""
+    words = [w for w in re.split(r"[^a-z0-9]+", (name or "").lower())
+             if w and not GENERIC_ROUND.match(w)]
+    return " ".join(words).title()
+
+
 def speaker_rows(tab, disp):
     rows = []
     for key, pts in tab.curves().items():
@@ -396,7 +407,29 @@ class TabTournament:
                     if q != k and not q.startswith("anon::"):
                         e["mates"][q] += 1
 
+    def resolve_finals(self) -> None:
+        """Each category has exactly one final. Names are unreliable: a "final"
+        spanning several rooms is really a deeper round, and sibling finals are
+        divisions elim_info() did not recognise."""
+        by_cat = collections.defaultdict(list)
+        for ridx, m in enumerate(self.rmeta):
+            if m[1] != "E" or m[3] != 0:
+                continue
+            rooms = self.w.nroom.get((self.tid, ridx)) or 1
+            if rooms > 1:
+                m[3] = rooms.bit_length() - 1
+            else:
+                by_cat[m[4]].append(ridx)
+        for idxs in by_cat.values():
+            if len(idxs) < 2:
+                continue
+            keep = max(idxs, key=lambda r: (not division_of(self.rmeta[r][2]), r))
+            for r in idxs:
+                if r != keep:
+                    self.rmeta[r][4] = division_of(self.rmeta[r][2]) or self.rmeta[r][2]
+
     def finish(self) -> None:
+        self.resolve_finals()
         w = self.w
         w.tours.append({"i": self.tid, "row": self.row,
                         "n": self.rec.get("name") or ("row %d" % self.row),
