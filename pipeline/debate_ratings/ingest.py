@@ -4,19 +4,38 @@ import json
 from . import sheet, tabbycat
 from .settings import MIN_AGE_DAYS
 
+RECOVERED_BASE = 90000  # ids above this are hand-recovered, not sheet rows
+
+
+def url_key(u):
+    return (u or "").strip().rstrip("/").lower()
+
 
 def sync_sheet(conn):
+    """Match rows to tournaments by URL, then name — never by sheet position.
+    Inserting a row mid-sheet shifts every row below it, which would otherwise
+    repoint each tournament at the next one's scraped data."""
     rows = sheet.fetch_rows()
     with conn.cursor() as cur:
+        cur.execute("SELECT row_id, source_url, name FROM tournaments")
+        known = cur.fetchall()
+        by_url = {url_key(u): r for r, u, _ in known if u}
+        by_name = {(n or "").strip(): r for r, _, n in known if n}
+        next_id = max((r for r, _, _ in known if r < RECOVERED_BASE), default=1) + 1
         for r in rows:
+            rid = by_url.get(url_key(r["url"])) or by_name.get((r["name"] or "").strip())
+            if rid is None:
+                rid, next_id = next_id, next_id + 1
+            r["row_id"] = rid
             cur.execute(
                 "INSERT INTO tournaments (row_id, name, start_date, source_url, "
                 "speaking_class, format) VALUES (%s, %s, %s, %s, %s, %s) "
                 "ON CONFLICT (row_id) DO UPDATE SET name = EXCLUDED.name, "
-                "start_date = COALESCE(EXCLUDED.start_date, tournaments.start_date), "
+                # a researched date (via /dates, or from a tab) outranks the sheet
+                "start_date = COALESCE(tournaments.start_date, EXCLUDED.start_date), "
                 "source_url = EXCLUDED.source_url, "
                 "speaking_class = EXCLUDED.speaking_class, format = EXCLUDED.format",
-                (r["row_id"], r["name"], r["date"], r["url"],
+                (rid, r["name"], r["date"], r["url"],
                  r["speaking_class"], r["format"]))
     conn.commit()
     return rows

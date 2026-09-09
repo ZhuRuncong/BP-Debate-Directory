@@ -1,4 +1,5 @@
 import csv
+import datetime
 import io
 
 import httpx
@@ -9,6 +10,15 @@ from .settings import SHEET_CSV_URL, USER_AGENT
 REQUIRED_COLUMNS = {"tournament", "home_url", "year", "date", "format", "speaking_class"}
 SKIP_URL_PARTS = ("docs.google", "people.hws.edu", "wsdc2018.com",
                   "paullau.wordpress", "web.archive.org")
+
+
+def iso_date(v):
+    """A half-typed date ("2024-02-") would abort the whole sync; the tab has one."""
+    v = (v or "").strip()
+    try:
+        return datetime.date.fromisoformat(v).isoformat()
+    except ValueError:
+        return None
 
 
 def fetch_rows():
@@ -29,7 +39,7 @@ def fetch_rows():
             "row_id": i + 2,
             "name": name,
             "url": url,
-            "date": (row.get("date") or "").strip() or None,
+            "date": iso_date(row.get("date")),
             "format": (row.get("format") or "").strip(),
             "speaking_class": (row.get("speaking_class") or "").strip(),
             "to_skip": (row.get("to_skip") or "").strip(),
