@@ -1,4 +1,5 @@
 import datetime
+import hashlib
 import json
 
 
@@ -77,6 +78,18 @@ class FakeConn:
             if name in self.artifacts:
                 return [(self.artifacts[name],)]
             return []
+        if "md5(coalesce(string_agg(" in q:
+            table = q.rsplit(" FROM ", 1)[1].strip()
+            rows = {"raw_tabs": self.raw_tabs, "raw_judges": self.raw_judges,
+                    "extra_games": self.extra_games, "tournaments": self.tournaments}[table]
+            blob = json.dumps(rows, sort_keys=True, default=str).encode("utf-8")
+            return [(len(rows), hashlib.md5(blob).hexdigest())]
+        if q.startswith("INSERT INTO model_files"):
+            model, name, body = params
+            self.model_files[(model, name)] = bytes(body)
+            return []
+        if q.startswith("SELECT count(*) FROM rooms"):
+            return [(len(self.rooms),)]
         if q.startswith("INSERT INTO artifacts"):
             self.artifacts[params[0]] = json.loads(params[1])
             return []

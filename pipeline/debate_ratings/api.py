@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from . import db, pipeline
 from .idnorm import canon
 
-RUN_OPTIONS = ("force", "fit_only", "skip_ingest", "publish_anyway")
+RUN_OPTIONS = ("force", "fit_only", "skip_ingest", "publish_anyway", "refit")
 LOG_TAIL = 200
 KINDS = ("player", "institution")
 HIDDEN_EMPTY = {"players": [], "institutions": []}

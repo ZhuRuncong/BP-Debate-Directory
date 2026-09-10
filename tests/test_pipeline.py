@@ -1,4 +1,6 @@
 ﻿import datetime
+import gzip
+import json
 
 import pytest
 from debate_ratings import fit, pipeline, priors
@@ -28,7 +30,8 @@ def test_skip_ingest_without_force_skips_rebuild():
 def test_publish_gate_blocks_regressions():
     conn = world.make_conn()
     pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
-    conn.snapshots.append((datetime.datetime.now(datetime.UTC), 10000, 10000, "{}"))
+    conn.snapshots.append((datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=1),
+                       10000, 10000, "{}"))
     with pytest.raises(pipeline.SanityError):
         pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
     assert len(conn.payloads) == 4
@@ -56,3 +59,52 @@ def test_fit_enrolls_quality_priors(monkeypatch):
     tab = fit.fit(conn, False, {}, log=lines.append)
     assert any("quality priors" in ln for ln in lines)
     assert tab.size > 0
+
+
+
+def _count_fits(monkeypatch):
+    calls, real = [], fit.fit
+    monkeypatch.setattr(fit, "fit", lambda *a, **k: calls.append(1) or real(*a, **k))
+    return calls
+
+
+def _bodies(conn):
+    return {k: v[1] for k, v in conn.payloads.items()}
+
+
+def test_unchanged_inputs_reuse_the_cached_fits(monkeypatch):
+    conn = world.make_conn()
+    pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
+    first = _bodies(conn)
+    calls = _count_fits(monkeypatch)
+    pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
+    assert calls == []
+    assert _bodies(conn) == first
+
+
+def test_hiding_needs_no_refit(monkeypatch):
+    conn = world.make_conn()
+    pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
+    conn.artifacts["hidden"] = {"players": ["edward delta"], "institutions": []}
+    calls = _count_fits(monkeypatch)
+    pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
+    assert calls == []
+    data = json.loads(gzip.decompress(conn.payloads[("data", "gz")][1]))
+    assert "Edward Delta" not in [p[0] for p in data["players"]]
+
+
+def test_a_merge_forces_a_refit(monkeypatch):
+    conn = world.make_conn()
+    pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
+    conn.artifacts["id_merges"] = dict(conn.artifacts["id_merges"], **{"eddie delta": "edward delta"})
+    calls = _count_fits(monkeypatch)
+    pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
+    assert len(calls) == 2
+
+
+def test_refit_option_bypasses_the_cache(monkeypatch):
+    conn = world.make_conn()
+    pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
+    calls = _count_fits(monkeypatch)
+    pipeline.run_pipeline(conn, fit_only=True, refit=True, log=QUIET)
+    assert len(calls) == 2

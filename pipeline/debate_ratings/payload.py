@@ -5,6 +5,7 @@ import itertools
 import json
 import math
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 import brotli
@@ -27,6 +28,7 @@ from .settings import EPOCH
 SIDES = ["og", "oo", "cg", "co", "aff", "neg"]
 BIAS_SCALE = 400
 BREAK_EDGE = 4
+BROTLI_QUALITY = 10
 
 DEPTH_LABEL = {0: "Finalist", 1: "Semifinalist", 2: "Quarterfinalist",
                3: "Octofinalist", 4: "Double-Octofinalist",
@@ -919,18 +921,20 @@ def build(conn, base_tab, abl_tab, occs, texts, built_date, log=print):
 
 def store(conn, data, rest, built_at):
     """Upsert gzip and brotli bodies; the Go server picks by Accept-Encoding."""
-    n = 0
+    raws = [(name, json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+            for name, obj in (("data", data), ("rest", rest))]
+    codecs = (("gz", lambda r: gzip.compress(r, 9, mtime=0)),
+              ("br", lambda r: brotli.compress(r, quality=BROTLI_QUALITY)))
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        jobs = [(name, enc, pool.submit(fn, raw)) for name, raw in raws for enc, fn in codecs]
+        bodies = [(name, enc, job.result()) for name, enc, job in jobs]
     with conn.cursor() as cur:
-        for name, obj in (("data", data), ("rest", rest)):
-            raw = json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-            for encoding, body in (("gz", gzip.compress(raw, 9, mtime=0)),
-                                   ("br", brotli.compress(raw, quality=11))):
-                cur.execute(
-                    "INSERT INTO payloads (name, encoding, built_at, body) "
-                    "VALUES (%s, %s, %s, %s) "
-                    "ON CONFLICT (name, encoding) DO UPDATE "
-                    "SET built_at = EXCLUDED.built_at, body = EXCLUDED.body",
-                    (name, encoding, built_at, body))
-                n += 1
+        for name, encoding, body in bodies:
+            cur.execute(
+                "INSERT INTO payloads (name, encoding, built_at, body) "
+                "VALUES (%s, %s, %s, %s) "
+                "ON CONFLICT (name, encoding) DO UPDATE "
+                "SET built_at = EXCLUDED.built_at, body = EXCLUDED.body",
+                (name, encoding, built_at, body))
     conn.commit()
-    return n
+    return len(bodies)

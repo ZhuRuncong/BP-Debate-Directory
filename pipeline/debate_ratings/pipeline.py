@@ -36,22 +36,31 @@ def publish_gate(conn, n_rooms, n_speakers):
     return problems
 
 
-def rebuild(conn, log=log, publish_anyway=False):
+def rebuild(conn, log=log, publish_anyway=False, refit=False):
     tagger.tag_new_motions(conn, log=log)
-    with conn.cursor() as cur:
-        cur.execute("SELECT payload FROM raw_judges ORDER BY row_id")
-        judge_records = [p for (p,) in cur.fetchall()]
-    judges_struct = judges.build(judge_records)
-    db.set_artifact(conn, "judges", judges_struct)
-    log("judges: %d identities" % len(judges_struct.get("d") or {}))
-
-    n_rooms, scale, stats = rooms.rebuild_all(conn, judges_struct)
-    log("rooms rebuilt: %d (speak scale %.3f)" % (n_rooms, scale))
-
     mm, occs, texts = fit.motion_map(conn)
     log("motion map: %d rounds -> %d distinct motions" % (len(mm), len(occs)))
-    base_tab = fit.fit(conn, False, mm, log=log)
-    abl_tab = fit.fit(conn, True, mm, log=log)
+    stamp = fit.fingerprint(conn, mm)
+    cached = None if refit else fit.load_cache(conn, stamp)
+    if cached:
+        base_tab, abl_tab = cached
+        with conn.cursor() as cur:
+            cur.execute("SELECT count(*) FROM rooms")
+            n_rooms = cur.fetchone()[0]
+        stats = db.get_artifact(conn, "rooms_meta", {}).get("stats") or {}
+        log("fit inputs unchanged: reusing cached fits over %d rooms" % n_rooms)
+    else:
+        with conn.cursor() as cur:
+            cur.execute("SELECT payload FROM raw_judges ORDER BY row_id")
+            judge_records = [p for (p,) in cur.fetchall()]
+        judges_struct = judges.build(judge_records)
+        db.set_artifact(conn, "judges", judges_struct)
+        log("judges: %d identities" % len(judges_struct.get("d") or {}))
+        n_rooms, scale, stats = rooms.rebuild_all(conn, judges_struct)
+        log("rooms rebuilt: %d (speak scale %.3f)" % (n_rooms, scale))
+        base_tab = fit.fit(conn, False, mm, log=log)
+        abl_tab = fit.fit(conn, True, mm, log=log)
+        fit.save_cache(conn, stamp, base_tab, abl_tab)
 
     built_at = datetime.datetime.now(datetime.UTC)
     built_date = built_at.date().isoformat()
@@ -78,7 +87,7 @@ def rebuild(conn, log=log, publish_anyway=False):
 
 
 def run_pipeline(conn, force=False, fit_only=False, skip_ingest=False,
-                 publish_anyway=False, log=log):
+                 publish_anyway=False, refit=False, log=log):
     """Ingest then rebuild; skips the rebuild when nothing new arrived unless forced."""
     db.migrate(conn)
     n_new = 0
@@ -87,5 +96,5 @@ def run_pipeline(conn, force=False, fit_only=False, skip_ingest=False,
     if n_new == 0 and not (force or fit_only):
         log("nothing new ingested, skipping rebuild")
         return {"ingested": 0, "rebuilt": False}
-    rows_b = rebuild(conn, log=log, publish_anyway=publish_anyway)
+    rows_b = rebuild(conn, log=log, publish_anyway=publish_anyway, refit=refit)
     return {"ingested": n_new, "rebuilt": True, "n_speakers": len(rows_b)}
