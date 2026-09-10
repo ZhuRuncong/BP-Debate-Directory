@@ -335,6 +335,11 @@ function tagCard(d) {
 }
 function renderPlayer(m, i) {
   const d = derived[i], car = C[i] || [], r = ratingOf(d);
+  if (!car.length) {
+    m.innerHTML = `<div class="wrap">${crumb("board", "debaters")}
+      <div class="card"><p class="mut">This profile is not available.</p></div></div>`;
+    return;
+  }
   const sub = [];
   if (d.insts.length) sub.push(d.insts.map(x =>
     `<a href="#" data-in="${esc(x.key)}">${esc(x.name)}</a>`).join(" → "));

@@ -883,6 +883,13 @@ def build(conn, base_tab, abl_tab, occs, texts, built_date, log=print):
     neighbours = build_neighbours(balance, inp.neighbors_raw)
     attach_expected_points(w, inp, by_text, at, log)
     jn, jc, jlink = build_judges(w, inp, at)
+    gone = {i for i, k in enumerate(w.pid.keys) if k in inp.hidden_players}
+    for i in gone:
+        w.careers.pop(i, None)
+        cv.pop(i, None)
+    for car in w.careers.values():
+        for e in car:
+            e[2] = [m for m in e[2] if m not in gone]
     board_rows, inst_at, inames, aka = build_board(w, len(players), inp.hidden_insts)
 
     data = {"built": built_date,

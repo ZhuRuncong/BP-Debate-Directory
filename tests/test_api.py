@@ -182,6 +182,12 @@ def test_hidden_player_is_dropped_from_payload():
     assert "Edward Delta" not in names
     assert payload.HIDDEN_NAME in names
     assert "0" not in data["aliases"] or "Ned Delta" not in data["aliases"].get("0", [])
+    rest = json.loads(gzip.decompress(conn.payloads[("rest", "gz")][1]))
+    gone = names.index(payload.HIDDEN_NAME)
+    assert str(gone) not in rest["careers"]
+    assert str(gone) not in rest["curves"]
+    assert all(gone not in e[2] for car in rest["careers"].values() for e in car)
+    assert data["board"][gone][0] == 0
 
 
 def test_exclude_drops_a_tournament_from_the_ratings():
