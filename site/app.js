@@ -1076,22 +1076,10 @@ function render() {
   else if (view.v === "judges") withRest(m, renderJudges);
   else if (view.v === "judge") withRest(m, mm => renderJudge(mm, view.id));
   else if (view.v === "balance") withRest(m, renderBalance);
-  else if (view.v === "disclaimer") renderDisclaimer(m);
   else renderBoard(m);
 }
-function renderDisclaimer(m) {
-  m.innerHTML = `<div class="wrap"><div class="card"><h3>Disclaimer</h3>
-    <p style="max-width:640px">This site is strictly for entertainment purposes and likely contains inaccuracies.
-    Quality and completeness of data is done on a best effort basis. Debaters are classified
-    by name; debaters with common names may find their data combined with those with the
-    same name (apologies to my Chinese debate friends). There are currently no plans to
-    resolve such inaccuracies in the near future. Please never cite this site for anything
-    beyond shits and giggles. The data on this site will be (hopefully) updated once a month.
-    Thank you to the BP debate community for your incredible recordkeeping.</p>
-  </div></div>`;
-}
 const ROUTES = { board: "/", tours: "/tournaments", insts: "/institutions",
-                 judges: "/judges", balance: "/motions", disclaimer: "/disclaimer" };
+                 judges: "/judges", balance: "/motions" };
 const slug = s => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 function pathFor(v, id) {
   if (v === "player") return `/debaters/${id}/${slug(P[id][0])}`;
@@ -1126,7 +1114,6 @@ function parsePath(p) {
   if (s[0] === "judges") { if (!s[1]) return { v: "judges" };
     const i = +s[1]; return JN[i] ? { v: "judge", id: i } : { v: "judges" }; }
   if (s[0] === "motions") return { v: "balance" };
-  if (s[0] === "disclaimer") return { v: "disclaimer" };
   return { v: "board" };
 }
 function titleFor(v, id) {
@@ -1134,7 +1121,7 @@ function titleFor(v, id) {
        : v === "judge" ? JN[id]
        : v === "inst" ? (buildInsts().find(x => x.key === id) || { name: id }).name
        : { tours: "Tournaments", insts: "Institutions", judges: "Judges",
-           balance: "Motions", disclaimer: "Disclaimer" }[v] || "BP Debate Directory";
+           balance: "Motions" }[v] || "BP Debate Directory";
 }
 
 function crumbName(f) {
@@ -1144,7 +1131,7 @@ function crumbName(f) {
   if (f.v === "inst") return (buildInsts().find(x => x.key === f.id) || {}).name || f.id;
   if (f.v === "judge") return JN[f.id] || null;
   return { board: "debaters", tours: "tournaments", insts: "institutions",
-           judges: "judges", balance: "motions", disclaimer: "disclaimer" }[f.v] || null;
+           judges: "judges", balance: "motions" }[f.v] || null;
 }
 function crumb(fallbackView, fallbackLabel) {
   const n = crumbName(history.state && history.state.from);
