@@ -3,12 +3,14 @@ import hmac
 import json
 import os
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import db, pipeline
+from . import db, form, pipeline
 from .idnorm import canon
+from .settings import FORM_POLL_MINUTES
 
-RUN_OPTIONS = ("force", "fit_only", "skip_ingest", "publish_anyway", "refit")
+RUN_OPTIONS = ("force", "fit_only", "skip_ingest", "publish_anyway", "refit", "requests")
 LOG_TAIL = 200
 KINDS = ("player", "institution")
 HIDDEN_EMPTY = {"players": [], "institutions": []}
@@ -104,6 +106,32 @@ class App:
 
     def run_status(self):
         return 200, self.runner.status()
+
+    def check_requests(self):
+        """Start a run when the form has requests to act on or rows to tick."""
+        reqs = form.fetch()
+        conn = self.connect()
+        try:
+            due = form.waiting(conn, reqs)
+        finally:
+            conn.close()
+        return self.trigger_run({"requests": True, "skip_ingest": True}) if due else None
+
+    def list_requests(self):
+        """Every request still in the sheet, newest first; review items stay open until ticked Done."""
+        try:
+            live = form.fetch()
+        except Exception as e:
+            return 502, {"error": "could not read the form sheet: %s" % e}
+        conn = self.connect()
+        try:
+            state = db.get_artifact(conn, form.STATE, {})
+        finally:
+            conn.close()
+        rows = [dict(state[r["id"]], id=r["id"], ticked=r["done"])
+                for r in reversed(live) if r["id"] in state]
+        return 200, {"needs_review": [r for r in rows if r["status"] == "review" and not r["ticked"]],
+                     "requests": rows}
 
     def missing_dates(self):
         conn = self.connect()
@@ -334,6 +362,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(*self.app.list_hidden())
         if self.path == "/excluded":
             return self.send_json(*self.app.list_excluded())
+        if self.path == "/requests":
+            return self.send_json(*self.app.list_requests())
         return self.send_json(404, {"error": "not found"})
 
     def do_POST(self):
@@ -365,6 +395,17 @@ class Handler(BaseHTTPRequestHandler):
         print("api: " + fmt % args, flush=True)
 
 
+def poll_form(app, minutes):
+    while True:
+        try:
+            res = app.check_requests()
+            if res:
+                print("form: new requests, run returned %d" % res[0], flush=True)
+        except Exception as e:
+            print("form poll failed: %s: %s" % (type(e).__name__, e), flush=True)
+        time.sleep(minutes * 60)
+
+
 def main():
     token = os.environ.get("ADMIN_TOKEN")
     if not token:
@@ -373,6 +414,10 @@ def main():
     port = int(os.environ.get("PORT", "8090"))
     Handler.app = App()
     Handler.token = token
+    if FORM_POLL_MINUTES > 0 and form.configured():
+        threading.Thread(target=poll_form, args=(Handler.app, FORM_POLL_MINUTES), daemon=True).start()
+    else:
+        print("form polling off", flush=True)
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     print("admin api listening on :%d" % port, flush=True)
     server.serve_forever()

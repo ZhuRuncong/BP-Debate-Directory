@@ -5,9 +5,10 @@ import time
 from http.server import ThreadingHTTPServer
 
 import httpx
-from debate_ratings import api, payload, pipeline
+from debate_ratings import api, form, payload, pipeline
 
 from . import world
+from .fakes import FakeSheet, form_row
 
 
 def make_app():
@@ -208,6 +209,38 @@ def test_exclude_validates_input():
     assert app.set_excluded({"row_id": "12"}, True)[0] == 400
     assert app.set_excluded({}, True)[0] == 400
     assert app.set_excluded({"row_id": 999999}, True)[0] == 404
+
+
+def test_form_poll_runs_only_when_there_is_work(monkeypatch):
+    app, conn = make_app()
+    pipeline.run_pipeline(conn, fit_only=True, log=lambda *a, **k: None)
+    s = FakeSheet(form_row("9/10/2026 12:00:00", "Redaction", "Ann Alpha"),
+                  form_row("9/10/2026 12:05:00", "Redaction", "Nobody Here"))
+    monkeypatch.setattr(form, "sheet", lambda: s)
+    assert app.check_requests()[0] == 202
+    for _ in range(600):
+        st = app.runner.status()
+        if st["state"] != "running":
+            break
+        time.sleep(0.05)
+    assert st["state"] == "done", st.get("error")
+    assert (st["result"]["requests"], s.ticked) == (1, ["G2"])
+    assert app.check_requests() is None
+
+    code, out = app.list_requests()
+    assert code == 200
+    assert [r["names"] for r in out["needs_review"]] == [["Nobody Here"]]
+    assert [r["ticked"] for r in out["requests"]] == [False, True]
+    s.rows[2][-1] = "TRUE"  # ticking Done by hand closes a review item
+    assert app.list_requests()[1]["needs_review"] == []
+
+
+def test_requests_listing_needs_the_sheet(monkeypatch):
+    app, _ = make_app()
+    monkeypatch.setattr(form, "FORM_SHEET_ID", "")
+    form.sheet.cache_clear()
+    code, out = app.list_requests()
+    assert code == 502 and "FORM_SHEET_ID" in out["error"]
 
 
 def test_hiding_a_person_also_hides_their_judging():

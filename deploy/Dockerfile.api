@@ -10,6 +10,6 @@ RUN pip install --no-cache-dir /wheels/*.whl
 COPY pyproject.toml ./
 COPY pipeline ./pipeline
 COPY scripts ./scripts
-RUN pip install --no-cache-dir --no-deps -e . && pip install --no-cache-dir "psycopg[binary]>=3.1" "httpx>=0.27" "brotli>=1.1" "numpy>=1.26" "transformers>=4.40" && pip install --no-cache-dir "torch>=2.2" --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir --no-deps -e . && pip install --no-cache-dir "psycopg[binary]>=3.1" "httpx>=0.27" "brotli>=1.1" "cryptography>=42" "numpy>=1.26" "transformers>=4.40" && pip install --no-cache-dir "torch>=2.2" --index-url https://download.pytorch.org/whl/cpu
 EXPOSE 8090
 CMD ["python", "-m", "debate_ratings.api"]

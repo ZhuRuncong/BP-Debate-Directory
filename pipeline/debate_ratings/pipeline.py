@@ -1,7 +1,7 @@
 import datetime
 import json
 
-from . import db, fit, ingest, judges, payload, rooms, tagger
+from . import db, fit, form, ingest, judges, payload, rooms, tagger
 from .settings import MAX_ROOM_DROP, MAX_SPEAKER_DROP
 
 
@@ -87,14 +87,19 @@ def rebuild(conn, log=log, publish_anyway=False, refit=False):
 
 
 def run_pipeline(conn, force=False, fit_only=False, skip_ingest=False,
-                 publish_anyway=False, refit=False, log=log):
-    """Ingest then rebuild; skips the rebuild when nothing new arrived unless forced."""
+                 publish_anyway=False, refit=False, requests=False, log=log):
+    """Apply form requests and ingest, then rebuild; skips the rebuild when nothing changed unless forced."""
     db.migrate(conn)
+    n_req = form.apply(conn, form.fetch(), log=log) if requests else 0
     n_new = 0
     if not (fit_only or skip_ingest):
         n_new = ingest.run(conn, log=log)
-    if n_new == 0 and not (force or fit_only):
+    res = {"ingested": n_new, "requests": n_req, "rebuilt": False}
+    if n_new or n_req or force or fit_only:
+        rows_b = rebuild(conn, log=log, publish_anyway=publish_anyway, refit=refit)
+        res.update(rebuilt=True, n_speakers=len(rows_b))
+    else:
         log("nothing new ingested, skipping rebuild")
-        return {"ingested": 0, "rebuilt": False}
-    rows_b = rebuild(conn, log=log, publish_anyway=publish_anyway, refit=refit)
-    return {"ingested": n_new, "rebuilt": True, "n_speakers": len(rows_b)}
+    if requests:
+        form.tick(conn, log=log)
+    return res

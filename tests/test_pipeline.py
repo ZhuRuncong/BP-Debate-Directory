@@ -23,7 +23,7 @@ def test_run_pipeline_fit_only_publishes():
 def test_skip_ingest_without_force_skips_rebuild():
     conn = world.make_conn()
     res = pipeline.run_pipeline(conn, skip_ingest=True, log=QUIET)
-    assert res == {"ingested": 0, "rebuilt": False}
+    assert res == {"ingested": 0, "requests": 0, "rebuilt": False}
     assert conn.payloads == {}
 
 

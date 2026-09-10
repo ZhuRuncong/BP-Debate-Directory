@@ -113,6 +113,10 @@ class FakeConn:
             if params:
                 games = [g for g in games if g.get("source") in params[0]]
             return [(dict(g),) for g in sorted(games, key=lambda g: g["row"])]
+        if q.startswith("SELECT count(*) FROM rating_snapshots"):
+            return [(len(self.snapshots),)]
+        if q.startswith("SELECT name, body FROM payloads WHERE encoding = 'gz'"):
+            return [(n, b) for (n, enc), (_t, b) in self.payloads.items() if enc == "gz"]
         if q.startswith("INSERT INTO payloads"):
             name, encoding, built_at, body = params
             self.payloads[(name, encoding)] = (built_at, body)
@@ -154,6 +158,33 @@ class FakeConn:
                 t["error"] = None
             return [(row_id,)]
         raise AssertionError("unhandled query: %s" % q)
+
+
+FORM_HEADER = ["Timestamp", "Email Address", "Request type",
+               "Your name exactly as displayed on the website (1)",
+               "Your name exactly as displayed on the website (2) (leave blank if not applicable)",
+               "Your name exactly as displayed on the website (3)  (leave blank if not applicable)",
+               "Done"]
+
+
+def form_row(at, kind, *names, done="FALSE"):
+    return [at, "someone@example.com", kind, *names, *[""] * (3 - len(names)), done]
+
+
+class FakeSheet:
+    """The form's response sheet as the Sheets API serves it; Done is column G."""
+
+    def __init__(self, *rows):
+        self.rows = [FORM_HEADER, *rows]
+        self.ticked = []
+
+    def values(self):
+        return [list(r) for r in self.rows]
+
+    def tick(self, cells):
+        self.ticked += cells
+        for c in cells:
+            self.rows[int(c[1:]) - 1][-1] = "TRUE"
 
 
 class G:
