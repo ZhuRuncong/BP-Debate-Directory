@@ -36,7 +36,7 @@ let listed = [];
 const F = { minT: 7, from: "" };
 let sortKey = "val", sortDir = -1, highlight = -1;
 let view = { v: "board" };
-let tourQ = "", tourSort = { k: "d", dir: -1 }, champs = null;
+let tourQ = "", tourSort = { k: "d", dir: -1 }, champs = null, champsRest = false;
 const INST_BS_DEFAULT = 1700;
 let instQ = "", instMinBS = INST_BS_DEFAULT, instSort = { k: "wins", dir: -1 };
 const INST_MINT_DEFAULT = 3;
@@ -899,8 +899,9 @@ function renderBalance(m) {
 }
 
 function championOf(ti) {
-  if (!champs) {
+  if (!champs || champsRest !== restReady) {
     champs = new Map();
+    champsRest = restReady;
     derived.forEach(d => (C[d.i] || []).forEach((e, j) => {
       const res = resultsOf(d)[j];
       if (res.won && (!res.cat || res.cat === "Open"))
@@ -944,6 +945,7 @@ function renderTours(m) {
   </div>`;
   $("tq").oninput = () => { tourQ = $("tq").value.trim().toLowerCase(); fillTours(); };
   fillTours();
+  if (!restReady) loadRest().then(() => { if (view.v === "tours") fillTours(); });
 }
 
 function breakStrength(t) {
@@ -1030,6 +1032,12 @@ let restPromise = null, restReady = false;
 function loadRest() {
   if (!restPromise) {
     restPromise = fetch(REST_URL).then(r => r.json()).then(r => {
+      if (r.n_players != null && r.n_players !== P.length) {
+        return fetch(REST_URL + "?v=" + encodeURIComponent(D.built) + "-" + P.length)
+          .then(x => x.json());
+      }
+      return r;
+    }).then(r => {
       C = r.careers || {};
       CV = r.curves || {};
       JC = r.jc || [];

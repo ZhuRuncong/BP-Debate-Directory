@@ -114,6 +114,12 @@ class FakeConn:
             return [(last[1], last[2], json.loads(last[3]))]
         if "SELECT name, body FROM model_files" in q:
             return [(n, b) for (m, n), b in self.model_files.items() if m == params[0]]
+        if "SELECT row_id, name FROM tournaments WHERE row_id = ANY" in q:
+            return [(k, self.tournaments[k].get("name")) for k in sorted(self.tournaments)
+                    if k in (params[0] or [])]
+        if "SELECT name FROM tournaments WHERE row_id" in q:
+            t = self.tournaments.get(params[0])
+            return [(t.get("name"),)] if t else []
         if "SELECT row_id, speaking_class FROM tournaments" in q:
             return [(k, v.get("speaking_class")) for k, v in sorted(self.tournaments.items())]
         if "FROM tournaments WHERE start_date IS NULL" in q:

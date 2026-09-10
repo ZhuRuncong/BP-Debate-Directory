@@ -730,6 +730,8 @@ def build_judges(w: World, inp: Inputs, at: dict):
              for p, ks in byp.items()}
     jidx = {}
     for p in sorted(byp, key=lambda p: label[p]):
+        if p in inp.hidden_players:
+            continue
         for key in byp[p]:
             jidx[key] = len(jn)
         jn.append(label[p])
@@ -897,7 +899,8 @@ def build(conn, base_tab, abl_tab, occs, texts, built_date, log=print):
             "jn": jn,
             "jlink": jlink,
             "depthLabel": {str(k): v for k, v in DEPTH_LABEL.items()}}
-    rest = {"careers": {str(i): w.careers[i] for i in sorted(w.careers)},
+    rest = {"n_players": len(players),
+            "careers": {str(i): w.careers[i] for i in sorted(w.careers)},
             "curves": {str(i): v for i, v in sorted(cv.items())},
             "balance": balance,
             "nbr": neighbours,

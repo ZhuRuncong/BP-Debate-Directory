@@ -255,6 +255,46 @@ class App:
                      "changed": True, "applies_at": "next rebuild"}
 
 
+    def list_excluded(self):
+        conn = self.connect()
+        try:
+            rows = db.get_artifact(conn, "excluded_rows", [])
+            with conn.cursor() as cur:
+                cur.execute("SELECT row_id, name FROM tournaments WHERE row_id = ANY(%s)",
+                            (list(rows),))
+                names = dict(cur.fetchall())
+            return 200, {"count": len(rows),
+                         "excluded": [{"row_id": r, "name": names.get(r)}
+                                      for r in sorted(rows)]}
+        finally:
+            conn.close()
+
+    def set_excluded(self, body: dict, drop: bool):
+        row_id = body.get("row_id")
+        if not isinstance(row_id, int) or isinstance(row_id, bool):
+            return 400, {"error": "row_id must be an integer"}
+        conn = self.connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT name FROM tournaments WHERE row_id = %s", (row_id,))
+                found = cur.fetchone()
+            if not found:
+                return 404, {"error": "no tournament with row_id %d" % row_id}
+            rows = set(db.get_artifact(conn, "excluded_rows", []))
+            if drop == (row_id in rows):
+                return 200, {"row_id": row_id, "name": found[0], "excluded": drop,
+                             "changed": False, "applies_at": "next rebuild"}
+            if drop:
+                rows.add(row_id)
+            else:
+                rows.discard(row_id)
+            db.set_artifact(conn, "excluded_rows", sorted(rows))
+        finally:
+            conn.close()
+        return 200, {"row_id": row_id, "name": found[0], "excluded": drop,
+                     "changed": True, "applies_at": "next rebuild"}
+
+
 class Handler(BaseHTTPRequestHandler):
     app = None
     token = None
@@ -292,6 +332,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(*self.app.list_aliases())
         if self.path == "/hidden":
             return self.send_json(*self.app.list_hidden())
+        if self.path == "/excluded":
+            return self.send_json(*self.app.list_excluded())
         return self.send_json(404, {"error": "not found"})
 
     def do_POST(self):
@@ -313,6 +355,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(*self.app.set_hidden(body, True))
         if self.path == "/unhide":
             return self.send_json(*self.app.set_hidden(body, False))
+        if self.path == "/exclude":
+            return self.send_json(*self.app.set_excluded(body, True))
+        if self.path == "/unexclude":
+            return self.send_json(*self.app.set_excluded(body, False))
         return self.send_json(404, {"error": "not found"})
 
     def log_message(self, fmt, *args):

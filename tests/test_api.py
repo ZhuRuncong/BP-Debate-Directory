@@ -182,3 +182,39 @@ def test_hidden_player_is_dropped_from_payload():
     assert "Edward Delta" not in names
     assert payload.HIDDEN_NAME in names
     assert "0" not in data["aliases"] or "Ned Delta" not in data["aliases"].get("0", [])
+
+
+def test_exclude_drops_a_tournament_from_the_ratings():
+    app, conn = make_app()
+    code, out = app.set_excluded({"row_id": 12}, True)
+    assert code == 200 and out["changed"] is True and out["name"] == "Missing IV"
+    assert conn.artifacts["excluded_rows"] == [12]
+
+    assert app.set_excluded({"row_id": 12}, True)[1]["changed"] is False
+    assert app.list_excluded()[1]["excluded"] == [{"row_id": 12, "name": "Missing IV"}]
+
+    assert app.set_excluded({"row_id": 12}, False)[1]["changed"] is True
+    assert conn.artifacts["excluded_rows"] == []
+
+
+def test_exclude_validates_input():
+    app, _ = make_app()
+    assert app.set_excluded({"row_id": "12"}, True)[0] == 400
+    assert app.set_excluded({}, True)[0] == 400
+    assert app.set_excluded({"row_id": 999999}, True)[0] == 404
+
+
+def test_hiding_a_person_also_hides_their_judging():
+    conn = world.make_conn()
+    conn.artifacts["hidden"] = {"players": ["judy chair"], "institutions": []}
+    app = api.App(connect=lambda: conn)
+    assert app.trigger_run({"fit_only": True})[0] == 202
+    for _ in range(600):
+        st = app.runner.status()
+        if st["state"] != "running":
+            break
+        time.sleep(0.05)
+    assert st["state"] == "done", st.get("error")
+    data = json.loads(gzip.decompress(conn.payloads[("data", "gz")][1]))
+    assert "Judy Chair" not in data["jn"]
+    assert "Cody Chair" in data["jn"]
