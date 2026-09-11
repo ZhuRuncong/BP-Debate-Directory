@@ -836,12 +836,15 @@ def build_board(w: World, n_players: int, hidden: set):
         # leave its neighbours showing as a repeat.
         kept = (k for k, _n in (it.get("insts") or []) if k not in hidden)
         own = [k for k, _ in itertools.groupby(kept)]
-        primary = it.get("inst")
+        # "inst" is a display name; skip hidden ones by key, falling back to the latest real one
+        shown = dict(it.get("insts") or [])
+        primary = next((shown.get(k) for k in reversed(it.get("at") or [])
+                        if k is not None and k not in hidden), None)
         board_rows.append([len(car), nr,
                            round(sum(rec_sp) / len(rec_sp), 2) if rec_sp else None,
                            round(pts / ptsr, 3) if ptsr else None,
                            wins, finals, breaks, obreaks,
-                           None if primary in hidden else primary, own,
+                           primary, own,
                            (w.tours[car[0][0]]["d"] if car else None)])
         inst_at.append([None if k in hidden else k for k in (it.get("at") or [])]
                        if car else [])

@@ -3,7 +3,7 @@ import gzip
 import json
 
 import pytest
-from debate_ratings import fit, pipeline, priors
+from debate_ratings import fit, payload, pipeline, priors
 
 from . import world
 
@@ -113,6 +113,18 @@ def test_merges_reach_score_only_games():
     ann = str(names.index("Ann Alpha"))
     assert {data["tournaments"][e[0]]["n"] for e in rest["careers"][ann]} == {
         "Fixture Open 2024", "Cape Town WUDC 2019"}
+
+
+def test_a_hidden_institution_is_never_anyones_primary():
+    # four people seen twice at Harvard, then twice under a junk "Double" team prefix
+    w = payload.World()
+    teams = ["Harvard A", "Harvard B", "Double A", "Double B"]
+    w.tours = [{"d": "2024-0%d-01" % (t + 1), "rounds": []} for t in range(4)]
+    for i in range(4):
+        w.careers[i] = [[t, teams[t], [], []] for t in range(4)]
+    assert [r[8] for r in payload.build_board(w, 4, set())[0]] == ["Double"] * 4
+    rows = payload.build_board(w, 4, {"double"})[0]
+    assert [(r[8], r[9]) for r in rows] == [("Harvard", ["harvard"])] * 4
 
 
 def test_refit_option_bypasses_the_cache(monkeypatch):
