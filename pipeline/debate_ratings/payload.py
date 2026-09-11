@@ -816,8 +816,10 @@ def build_board(w: World, n_players: int, hidden: set):
                     isopen = (not meta[4]) or meta[4] == "Open"
                     if isopen:
                         openc = True
-                        if meta[3] is not None and (obd is None or meta[3] < obd):
-                            obd = meta[3]
+                        # advancing counts as reaching the next round, as in site/app.js
+                        reach = meta[3] - 1 if meta[3] and r[1] == 10 else meta[3]
+                        if reach is not None and (obd is None or reach < obd):
+                            obd = reach
                         if meta[3] == 0 and r[1] == 10:
                             won = True
             if elim:

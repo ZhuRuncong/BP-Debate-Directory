@@ -97,9 +97,11 @@ function resultsOf(d) {
         const isOpen = !meta[4] || meta[4] === "Open";
         if (isOpen) open = true;
         const dep = meta[3];
-        if (dep != null && (bd === null || dep < bd)) { bd = dep; bcat = meta[4]; }
+        // advancing counts as reaching the next round, even for a team that withdrew before it
+        const reach = dep != null && dep > 0 && r[1] === 10 ? dep - 1 : dep;
+        if (reach != null && (bd === null || reach < bd)) { bd = reach; bcat = meta[4]; }
         if (dep === 0 && r[1] === 10) { won = true; bcat = meta[4]; }
-        if (isOpen && dep != null && (obd === null || dep < obd)) obd = dep;
+        if (isOpen && reach != null && (obd === null || reach < obd)) obd = reach;
         if (isOpen && dep === 0 && r[1] === 10) owon = true;
       }
     }
