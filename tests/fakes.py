@@ -147,6 +147,12 @@ class FakeConn:
                     out.append((k, v.get("name"), v.get("source_url"),
                                 v.get("status"), v.get("error")))
             return out
+        if q.startswith("UPDATE tournaments SET status = 'pending'"):
+            t = self.tournaments.get(params[0])
+            if t is None:
+                return []
+            t.update(status="pending", error=None)
+            return [(t.get("name"),)]
         if q.startswith("UPDATE tournaments SET start_date"):
             date, row_id = params
             t = self.tournaments.get(row_id)

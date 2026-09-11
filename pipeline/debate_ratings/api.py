@@ -324,6 +324,24 @@ class App:
                      "changed": True, "applies_at": "next rebuild"}
 
 
+    def recrawl(self, body: dict):
+        """Queue one tournament to be fetched again and overwritten on the next normal run."""
+        row_id = body.get("row_id")
+        if not isinstance(row_id, int) or isinstance(row_id, bool):
+            return 400, {"error": "row_id must be an integer"}
+        conn = self.connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE tournaments SET status = 'pending', error = NULL "
+                            "WHERE row_id = %s RETURNING name", (row_id,))
+                found = cur.fetchone()
+            conn.commit()
+        finally:
+            conn.close()
+        if not found:
+            return 404, {"error": "no tournament with row_id %d" % row_id}
+        return 200, {"row_id": row_id, "name": found[0], "applies_at": "next normal run"}
+
     def list_roster_fixes(self):
         conn = self.connect()
         try:
@@ -432,6 +450,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(*self.app.set_excluded(body, True))
         if self.path == "/unexclude":
             return self.send_json(*self.app.set_excluded(body, False))
+        if self.path == "/recrawl":
+            return self.send_json(*self.app.recrawl(body))
         if self.path == "/roster-fix":
             return self.send_json(*self.app.set_roster_fix(body, True))
         if self.path == "/roster-fix/remove":

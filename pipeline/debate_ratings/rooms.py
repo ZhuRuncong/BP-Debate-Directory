@@ -85,10 +85,15 @@ def team_rosters(rec: dict) -> dict[str, list[str]]:
             for k, v in (rec.get("teams") or {}).items()}
 
 
+def speaker_name(key: str) -> str:
+    """Speaker-tab keys carry "\\t<team>" when a name repeats across teams."""
+    return key.split("\t", 1)[0]
+
+
 def speaks_by_team(rec: dict) -> dict[str, dict[str, list]]:
     out = collections.defaultdict(dict)
     for nm, d in (rec.get("speaks") or {}).items():
-        out[keyname(d.get("team"))][norm_name(nm)] = d.get("scores") or []
+        out[keyname(d.get("team"))][norm_name(speaker_name(nm))] = d.get("scores") or []
     return out
 
 
@@ -127,7 +132,8 @@ def apply_roster_fixes(rec: dict, fixes: dict) -> dict:
     # display only: panels and standings still match on the tab's own team name
     rec["team_names"] = {t: m[TEAM_RENAME] for t, m in fix.items() if TEAM_RENAME in m}
     rec["teams"] = {t: [swap(t, p) for p in ps] for t, ps in (rec.get("teams") or {}).items()}
-    rec["speaks"] = {swap(s.get("team"), n): s for n, s in (rec.get("speaks") or {}).items()}
+    rec["speaks"] = {(swap(s.get("team"), speaker_name(n)) if keyname(s.get("team")) in fix else n): s
+                     for n, s in (rec.get("speaks") or {}).items()}
     return rec
 
 

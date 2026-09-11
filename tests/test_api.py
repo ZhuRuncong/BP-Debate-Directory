@@ -243,6 +243,15 @@ def test_requests_listing_needs_the_sheet(monkeypatch):
     assert code == 502 and "FORM_SHEET_ID" in out["error"]
 
 
+def test_recrawl_requeues_a_tournament():
+    app, conn = make_app()
+    code, out = app.recrawl({"row_id": 10})
+    assert code == 200 and out["name"] == "Fixture Open 2024"
+    assert conn.tournaments[10]["status"] == "pending"
+    assert app.recrawl({"row_id": 999999})[0] == 404
+    assert app.recrawl({"row_id": "10"})[0] == 400
+
+
 def test_roster_fix_names_a_placeholder_speaker():
     app, conn = make_app()
     body = {"row_id": 10, "team": "Delta B", "placeholder": "TBD", "name": "Tess Delta"}

@@ -2,7 +2,7 @@ import collections
 import json
 
 from debate_ratings.payload import elim_info
-from debate_ratings.rooms import find_chair
+from debate_ratings.rooms import find_chair, speaks_by_team
 from debate_ratings.tabbycat import group_rooms, parse_results_page, parse_speaker_tab
 
 
@@ -82,6 +82,16 @@ def test_parse_speaker_tab_scores_and_drops():
     assert out["Ann One"] == {"team": "Alpha A", "scores": [76.0, None]}
     assert stats["speaker_rows_parsed"] == 1
     assert stats["speaker_rows_dropped"] == 1
+
+
+def test_speaker_tab_keeps_a_name_repeated_across_teams():
+    table = {"head": [{"key": "name"}, {"key": "team"}, {"title": "R1"}],
+             "data": [[{"text": "Speaker 1"}, {"text": "Backpack"}, {"text": "81"}],
+                      [{"text": "Speaker 1"}, {"text": "Oxford C"}, {"text": "74"}]]}
+    rec = {"speaks": parse_speaker_tab(page_with([table]))}
+    by_team = speaks_by_team(rec)
+    assert by_team["backpack"]["Speaker 1"] == [81.0]
+    assert by_team["oxford c"]["Speaker 1"] == [74.0]
 
 
 def test_elim_info():

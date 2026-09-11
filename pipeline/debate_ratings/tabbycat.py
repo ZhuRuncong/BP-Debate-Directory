@@ -205,7 +205,8 @@ def parse_speaker_tab(page, stats=None):
                     scores.append(float(txt))
                 except ValueError:
                     scores.append(None)
-            out[name] = {"team": team, "scores": scores}
+            # two teams can share a name ("Speaker 1"); keep both, see rooms.speaker_name
+            out[name if name not in out else "%s\t%s" % (name, team)] = {"team": team, "scores": scores}
         except Exception:
             if stats is not None:
                 stats["speaker_rows_dropped"] += 1
