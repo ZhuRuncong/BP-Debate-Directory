@@ -103,7 +103,7 @@ def test_redaction_hides_speakers_and_judges_by_any_spelling():
     [req] = sheet(row("1", "Redaction", "Ann Álpha", "judy chair", "Nobody Here"))
     assert form.apply(conn, [req], log=QUIET) == 1
     assert {"ann alpha", "judy chair"} <= set(conn.artifacts["hidden"]["players"])
-    assert outcome(conn, req)["status"] == "review"
+    assert outcome(conn, req)["status"] == "done"  # one real name is enough; the rest is noise
     assert outcome(conn, req)["note"] == "not on the site: Nobody Here"
     first = dict(outcome(conn, req))
     form.apply(conn, [req], log=QUIET)
@@ -198,3 +198,17 @@ def test_a_failed_tick_is_retried_without_rebuilding(monkeypatch):
     del s.tick
     res = pipeline.run_pipeline(conn, requests=True, skip_ingest=True, log=QUIET)
     assert (res["requests"], res["rebuilt"], s.ticked) == (0, False, ["G2"])
+
+
+def test_merge_keeps_differently_accented_names_apart():
+    conn = world.make_conn()
+    conn.extra_games += [
+        {"source": "sheets", "row": 90019, "seq": 2, "t": world.day("2018-12-28"), "obs": "O",
+         "c": [["zoë cape"], ["rex cape"]], "r": [1, 0]},
+        {"source": "scoreonly", "row": 10, "seq": "Trial", "t": world.T, "obs": "C",
+         "c": [["zoè cape"], ["fay beta"]], "r": [75.0, 74.0], "sc": 2.0}]
+    pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
+    [req] = sheet(row("1", "Merge", "Zoë Cape", "Zoè Cape"))
+    assert form.apply(conn, [req], log=QUIET) == 0
+    note = outcome(conn, req)["note"]
+    assert note.endswith("are differently accented") and "zoë cape" in note and "zoè cape" in note

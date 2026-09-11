@@ -99,6 +99,24 @@ def fold(name: str) -> str:
                             if not unicodedata.combining(c)).split())
 
 
+def letters(name: str) -> list:
+    out = []
+    for c in unicodedata.normalize("NFD", canon(name)):
+        if unicodedata.combining(c):
+            if out:
+                out[-1][1].add(c)
+        elif c.isalnum():
+            out.append((c, set()))
+    return out
+
+
+def compatible(a: str, b: str) -> bool:
+    """One spelling may drop accents the other has, but never carry different ones."""
+    la, lb = letters(a), letters(b)
+    return len(la) == len(lb) and all(x == y and (not m or not n or m == n)
+                                      for (x, m), (y, n) in zip(la, lb, strict=True))
+
+
 def parse(values: list[list[str]]) -> list[dict]:
     head = [str(h).strip().casefold() for h in values[0]] if values else []
 
@@ -196,7 +214,8 @@ def redact(site: Site, hidden: dict, names: list) -> dict:
         if not found and not {fold(n), fold(site.key(n))} & gone:
             missing.append(n)
     hidden["players"] = sorted(have | keys)
-    out = {"status": "review" if missing else "done", "hid": sorted(keys - have)}
+    # people pad the form with junk, so one real name hidden is enough to call it done
+    out = {"status": "review" if len(missing) == len(names) else "done", "hid": sorted(keys - have)}
     if missing:
         out["note"] = "not on the site: " + ", ".join(missing)
     return out
@@ -210,6 +229,10 @@ def merge(site: Site, names: list) -> dict:
     keys = list(dict.fromkeys(k for f in found for k in sorted(f)))
     if len(keys) < 2:
         return {"status": "done", "merged": {}, "note": "already one profile"}
+    # "Viet" may join "Việt", but "Việt" and "Viết" are different names
+    for a, b in itertools.combinations(keys, 2):
+        if fold(a) == fold(b) and not compatible(a, b):
+            return {"status": "review", "note": "%s and %s are differently accented" % (a, b)}
     for a, b in itertools.combinations(keys, 2):
         both = site.tours[a] & site.tours[b]
         if both:
