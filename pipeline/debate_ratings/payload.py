@@ -341,7 +341,8 @@ class TabTournament:
                 i = self.w.pid.id(self.inp.pkey(p))
                 e = self.tp.get(i)
                 if e is None:
-                    e = self.tp[i] = {"team": norm_name(traw or tk), "tk": tk,
+                    team = (self.rec.get("team_names") or {}).get(tk) or norm_name(traw or tk)
+                    e = self.tp[i] = {"team": team, "tk": tk,
                                       "mates": collections.Counter(), "r": []}
                 sc = None
                 if is_prelim and pidx is not None:

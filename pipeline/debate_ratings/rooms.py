@@ -110,6 +110,9 @@ def resolve_roster(entry: dict, teams: dict, spk_by_team: dict) -> tuple[str, li
     return tk, [p for p in dict.fromkeys(roster or []) if p][:6]
 
 
+TEAM_RENAME = "@team"
+
+
 def apply_roster_fixes(rec: dict, fixes: dict) -> dict:
     """Name placeholder speakers ("Speaker 2") on one team at one tournament."""
     fix = {keyname(t): {keyname(o): n for o, n in m.items()}
@@ -121,6 +124,8 @@ def apply_roster_fixes(rec: dict, fixes: dict) -> dict:
         return fix.get(keyname(team), {}).get(keyname(name), name)
 
     rec = dict(rec)
+    # display only: panels and standings still match on the tab's own team name
+    rec["team_names"] = {t: m[TEAM_RENAME] for t, m in fix.items() if TEAM_RENAME in m}
     rec["teams"] = {t: [swap(t, p) for p in ps] for t, ps in (rec.get("teams") or {}).items()}
     rec["speaks"] = {swap(s.get("team"), n): s for n, s in (rec.get("speaks") or {}).items()}
     return rec

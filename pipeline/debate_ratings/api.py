@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import db, form, pipeline
 from .idnorm import canon
+from .rooms import TEAM_RENAME
 from .settings import FORM_POLL_MINUTES
 
 RUN_OPTIONS = ("force", "fit_only", "skip_ingest", "publish_anyway", "refit", "requests")
@@ -331,9 +332,11 @@ class App:
             conn.close()
 
     def set_roster_fix(self, body: dict, add: bool):
-        """Name a placeholder speaker on one team at one tournament."""
+        """Name a placeholder speaker, or rename the team ("rename"), at one tournament."""
         row_id, team, placeholder = body.get("row_id"), body.get("team"), body.get("placeholder")
         name = body.get("name") if add else ""
+        if body.get("rename"):
+            placeholder, name = TEAM_RENAME, body["rename"] if add else ""
         if not isinstance(row_id, int) or isinstance(row_id, bool):
             return 400, {"error": "row_id must be an integer"}
         if not all(isinstance(v, str) and v.strip() for v in (team, placeholder)) or \

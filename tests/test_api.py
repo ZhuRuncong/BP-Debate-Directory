@@ -248,12 +248,15 @@ def test_roster_fix_names_a_placeholder_speaker():
     body = {"row_id": 10, "team": "Delta B", "placeholder": "TBD", "name": "Tess Delta"}
     code, out = app.set_roster_fix(body, True)
     assert code == 200 and out["tournament"] == "Fixture Open 2024"
-    assert app.list_roster_fixes()[1] == {"10": {"Delta B": {"TBD": "Tess Delta"}}}
+    rename = {"row_id": 10, "team": "Delta B", "rename": "Delta Prime"}
+    assert app.set_roster_fix(rename, True)[0] == 200
+    assert app.list_roster_fixes()[1] == {"10": {"Delta B": {"TBD": "Tess Delta", "@team": "Delta Prime"}}}
     pipeline.run_pipeline(conn, fit_only=True, log=lambda *a, **k: None)
     data = json.loads(gzip.decompress(conn.payloads[("data", "gz")][1]))
     rest = json.loads(gzip.decompress(conn.payloads[("rest", "gz")][1]))
     tess = str([p[0] for p in data["players"]].index("Tess Delta"))
-    assert [e[1] for e in rest["careers"][tess]] == ["Delta B"]
+    assert [e[1] for e in rest["careers"][tess]] == ["Delta Prime"]
+    assert app.set_roster_fix(rename, False)[0] == 200
 
     assert app.set_roster_fix(body, False)[0] == 200
     assert conn.artifacts["roster_fixes"] == {}
