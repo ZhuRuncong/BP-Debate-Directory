@@ -33,7 +33,12 @@ let judgeQ = "", judgeMinBS = JUDGE_BS_DEFAULT;
 let judgeSort = { k: "rounds", dir: -1 }, judgeCache = { key: undefined, rows: null };
 let derived = [];
 let listed = [];
-const F = { minT: 7, from: "" };
+const F = { minT: 7, from: "", region: "" };
+const REGION_LIST = ["Americas", "Europe", "Asia", "Africa", "Australia"];
+let instRegionF = "", judgeRegion = "";
+const regionPick = (id, val) => `<div class="f"><label for="${id}">Region</label>
+  <select id="${id}"><option value="">All</option>${REGION_LIST.map(r =>
+    `<option${r === val ? " selected" : ""}>${r}</option>`).join("")}</select></div>`;
 let sortKey = "val", sortDir = -1, highlight = -1;
 let view = { v: "board" };
 let tourQ = "", tourSort = { k: "d", dir: -1 }, champs = null, champsRest = false;
@@ -66,16 +71,19 @@ async function boot() {
 }
 
 function buildDerived() {
-  const B = D.board || [], IN = D.instNames || {}, AT = D.instAt || [];
+  const B = D.board || [], IN = D.instNames || {}, AT = D.instAt || [], RG = D.instRegion || {};
   derived = P.map((p, i) => {
     const b = B[i] || [];
+    // a debater's region is that of their most recent institution
+    const recent = (AT[i] || []).findLast(k => k != null) ?? (b[9] || []).at(-1);
     return { i, name: p[0], lname: p[0].toLowerCase(), mu: p[1], sg: p[2], last: p[3],
              amu: p[4], asg: p[5],
              nt: b[0] || 0, nr: b[1] || 0, avg: b[2] ?? null, ppr: b[3] ?? null,
              wins: b[4] || 0, finals: b[5] || 0, breaks: b[6] || 0, obreaks: b[7] || 0,
              inst: b[8] ?? null,
              insts: (b[9] || []).map(k => ({ key: k, name: IN[k] || k })),
-             first: b[10] ?? null, instAt: AT[i] || [], results: null };
+             first: b[10] ?? null, instAt: AT[i] || [], region: RG[recent] || null,
+             results: null };
   });
 }
 function resultsOf(d) {
@@ -155,6 +163,7 @@ const gridOf = cols => cols.map(c => (tierNow() < 3 && c.mw) || c.w).join(" ");
 
 function computeList() {
   listed = derived.filter(d => d.mu != null && d.nt >= F.minT &&
+    (!F.region || d.region === F.region) &&
     (!F.from || (d.last != null && fmtDay(d.last) >= F.from)));
   const get = sortKey === "val" ? (d => ratingOf(d).val)
             : sortKey === "name" ? (d => d.lname)
@@ -174,6 +183,7 @@ function renderBoard(m) {
     <div class="filters">
       <div class="f"><label for="fT">Min tournaments</label>
         <input type="number" id="fT" min="1" max="99" step="1" style="width:64px" value="${F.minT}"></div>
+      ${regionPick("fr", F.region)}
       <div class="f"><label for="ff">Last seen on/after</label>
         <input type="text" id="ff" placeholder="YYYY-MM-DD" size="10" value="${esc(F.from)}"></div>
       <div class="f"><label for="fn">Find in list <span class="rv" id="lF"></span></label>
@@ -191,9 +201,10 @@ function renderBoard(m) {
   </div>`;
   $("fT").oninput = e => { F.minT = Math.max(1, +e.target.value || 1); update(); };
   $("ff").oninput = e => { F.from = e.target.value.trim(); update(); };
+  $("fr").onchange = e => { F.region = e.target.value; highlight = -1; update(); };
   $("fn").oninput = e => jumpTo(e.target.value.trim().toLowerCase());
   $("fn").onkeydown = e => { if (e.key === "Enter" && highlight >= 0) go("player", listed[highlight].i); };
-  $("freset").onclick = () => { Object.assign(F, { minT: 7, from: "" }); highlight = -1; renderBoard(m); update(); };
+  $("freset").onclick = () => { Object.assign(F, { minT: 7, from: "", region: "" }); highlight = -1; renderBoard(m); update(); };
   $("fcsv").onclick = exportCSV;
   m.onscroll = paint;
   update();
@@ -474,7 +485,8 @@ function buildInsts() {
   }
   instCache = { key: instMinBS, rest: restReady, rows: [...acc.values()]
     .filter(a => a.people.size)
-    .map(a => ({ name: a.name, key: a.key, people: a.people.size, tourns: a.tourns.size,
+    .map(a => ({ name: a.name, key: a.key, region: (D.instRegion || {})[a.key] || null,
+                 people: a.people.size, tourns: a.tourns.size,
                  wins: a.win.size, finals: a.fin.size, obreaks: a.opn.size })) };
   return instCache.rows;
 }
@@ -498,8 +510,8 @@ const ICOLS = [
   { k: "finals", t: "Finals", n: 1 }, { k: "wins", t: "Titles", n: 1 },
 ];
 function fillInsts() {
-  const rows = buildInsts().filter(x => !instQ || x.key.includes(instQ) ||
-    akaFor(x.key).some(a => a.includes(instQ)));
+  const rows = buildInsts().filter(x => (!instRegionF || x.region === instRegionF) &&
+    (!instQ || x.key.includes(instQ) || akaFor(x.key).some(a => a.includes(instQ))));
   const get = instSort.k === "name" ? (x => x.key) : (x => x[instSort.k]);
 
   rows.sort((a, b) => {
@@ -523,6 +535,7 @@ function renderInsts(m) {
     <div class="filters">
       <div class="f"><label for="iq">Search institution</label>
         <input type="text" id="iq" size="22" value="${esc(instQ)}"></div>
+      ${regionPick("ir", instRegionF)}
       <div class="f"><label for="ibs">Min tournament break strength</label>
         <input type="number" id="ibs" step="50" style="width:90px" value="${instMinBS ?? ""}"></div>
       <div class="f"><label>&nbsp;</label><button class="btn" id="ireset">reset</button></div>
@@ -531,14 +544,15 @@ function renderInsts(m) {
     <div class="tbl" id="itbl"></div>
   </div>`;
   $("iq").oninput = () => { instQ = $("iq").value.trim().toLowerCase(); fillInsts(); };
+  $("ir").onchange = () => { instRegionF = $("ir").value; fillInsts(); };
   $("ibs").oninput = () => {
     const v = $("ibs").value.trim();
     instMinBS = v === "" ? null : +v;
     fillInsts();
   };
   $("ireset").onclick = () => {
-    instQ = ""; instMinBS = INST_BS_DEFAULT;
-    $("iq").value = ""; $("ibs").value = INST_BS_DEFAULT;
+    instQ = ""; instMinBS = INST_BS_DEFAULT; instRegionF = "";
+    $("iq").value = ""; $("ibs").value = INST_BS_DEFAULT; $("ir").value = "";
     fillInsts();
   };
   fillInsts();
@@ -629,7 +643,9 @@ const JCOLS = [
 const judgeHref = j => JLINK[j] >= 0 ? `data-p="${JLINK[j]}"` : `data-j="${j}"`;
 function fillJudges() {
   const q = judgeQ;
-  const rows = buildJudges().filter(x => !q || x.name.toLowerCase().includes(q));
+  // judges carry no institution of their own; use the linked debater's, if any
+  const rows = buildJudges().filter(x => (!q || x.name.toLowerCase().includes(q)) &&
+    (!judgeRegion || (JLINK[x.j] >= 0 && derived[JLINK[x.j]].region === judgeRegion)));
   const get = judgeSort.k === "name" ? (x => x.name.toLowerCase()) : (x => x[judgeSort.k]);
   rows.sort((a, b) => {
     const x = get(a) ?? -Infinity, y = get(b) ?? -Infinity;
@@ -655,6 +671,7 @@ function renderJudges(m) {
     <div class="filters">
       <div class="f"><label for="jq">Search</label>
         <input type="text" id="jq" size="22" value="${esc(judgeQ)}"></div>
+      ${regionPick("jr", judgeRegion)}
       <div class="f"><label for="jbs">Min tournament break strength</label>
         <input type="number" id="jbs" step="50" style="width:90px" value="${judgeMinBS ?? ""}"></div>
       <div class="f"><label>&nbsp;</label><button class="btn" id="jreset">reset</button></div>
@@ -663,14 +680,15 @@ function renderJudges(m) {
     <div class="tbl" id="jtbl"></div>
   </div>`;
   $("jq").oninput = () => { judgeQ = $("jq").value.trim().toLowerCase(); fillJudges(); };
+  $("jr").onchange = () => { judgeRegion = $("jr").value; fillJudges(); };
   $("jbs").oninput = () => {
     const v = $("jbs").value.trim();
     judgeMinBS = v === "" ? null : +v;
     fillJudges();
   };
   $("jreset").onclick = () => {
-    judgeQ = ""; judgeMinBS = JUDGE_BS_DEFAULT;
-    $("jq").value = ""; $("jbs").value = JUDGE_BS_DEFAULT;
+    judgeQ = ""; judgeMinBS = JUDGE_BS_DEFAULT; judgeRegion = "";
+    $("jq").value = ""; $("jbs").value = JUDGE_BS_DEFAULT; $("jr").value = "";
     fillJudges();
   };
   fillJudges();

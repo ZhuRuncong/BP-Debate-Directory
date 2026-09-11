@@ -5,7 +5,7 @@ html,body{margin:0;height:100%}
 body{font:13px/1.5 Verdana,Geneva,sans-serif;background:#fff;color:#111;overflow:hidden}
 a{color:var(--blue);text-decoration:none}
 a:hover{text-decoration:underline}
-button,input{font:inherit;color:inherit}
+button,input,select{font:inherit;color:inherit}
 
 #app{display:none;flex-direction:column;height:100%}
 header{padding:9px 0;background:#f8f8f8;border-bottom:2px solid #ddd}
@@ -30,7 +30,8 @@ main{flex:1;overflow:auto;scrollbar-gutter:stable}
 .filters{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:flex-end;background:#f8f8f8;border:1px solid #ddd;padding:10px 10px;margin-bottom:10px}
 .f{display:flex;flex-direction:column;gap:3px}
 .f label{font-size:11px;color:var(--dim)}
-.f input{padding:4px 7px;border:1px solid #999;background:#fff}
+.f input,.f select{padding:4px 7px;border:1px solid #999;background:#fff}
+.f select{padding-top:5px;padding-bottom:5px}
 .f .rv{color:var(--blue)}
 .btn{padding:4px 11px;border:1px solid #999;background:#eee;cursor:pointer}
 .btn:hover{background:#e2e2e2}
@@ -118,7 +119,8 @@ svg .ax{fill:#333;font-size:10px}
   #gsearch input{padding:7px 9px}
   .wrap{padding:10px 10px 44px}
   .filters{padding:8px;gap:8px 12px;margin-bottom:8px}
-  .f input{padding:6px 7px}
+  .f input,.f select{padding:6px 7px}
+  .f select{padding-top:7px;padding-bottom:7px}
   .btn{padding:6px 12px}
   .tagf{padding:8px;gap:2px 12px;margin:-8px 0 8px}
   .card{padding:10px 8px;overflow-x:auto}

@@ -7,6 +7,7 @@ import math
 import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import brotli
 
@@ -30,6 +31,8 @@ SIDES = ["og", "oo", "cg", "co", "aff", "neg"]
 BIAS_SCALE = 400
 BREAK_EDGE = 4
 BROTLI_QUALITY = 10
+# Hand-assigned region per institution key; new institutions stay unassigned until added.
+REGIONS = json.loads((Path(__file__).parent / "regions.json").read_text(encoding="utf-8"))
 
 DEPTH_LABEL = {0: "Finalist", 1: "Semifinalist", 2: "Quarterfinalist",
                3: "Octofinalist", 4: "Double-Octofinalist",
@@ -778,6 +781,30 @@ def build_judges(w: World, inp: Inputs, at: dict):
     return jn, jc, jlink
 
 
+# Team-name prefixes two societies share, resolved by where the team debated:
+# Ottawa's English Debating Society and Rotterdam's Erasmus Debating Society both enter as "EDS".
+REGIONAL_PREFIX = {"eds": {"Europe": "Erasmus"}}
+TOUR_REGION_SHARE = 0.6
+
+
+def regional_teams(w: World, pl: list, teams_of: dict, insts: dict) -> dict:
+    """Rename shared prefixes by tournament region, taken from the field's other institutions."""
+    field = collections.defaultdict(collections.Counter)
+    for i in pl:
+        for e, k in zip(w.careers[i], insts[i]["at"], strict=True):
+            if k in REGIONS and k not in REGIONAL_PREFIX:
+                field[e[0]][REGIONS[k]] += 1
+    region = {t: c.most_common(1)[0][0] for t, c in field.items()
+              if c.most_common(1)[0][1] >= TOUR_REGION_SHARE * sum(c.values())}
+
+    def rename(name, tid):
+        head, _, tail = name.partition(" ")
+        to = REGIONAL_PREFIX.get(head.lower(), {}).get(region.get(tid))
+        return f"{to} {tail}".strip() if to else name
+
+    return {i: [rename(nm, e[0]) for nm, e in zip(teams_of[i], w.careers[i], strict=True)] for i in pl}
+
+
 def build_board(w: World, n_players: int, hidden: set):
     pl = sorted(w.careers)
     teams_of = {i: [e[1] or "" for e in w.careers[i]] for i in pl}
@@ -790,6 +817,9 @@ def build_board(w: World, n_players: int, hidden: set):
             ds.append(last)
         days_of[i] = ds
     insts = board.institutions(pl, teams_of, days_of)
+    renamed = regional_teams(w, pl, teams_of, insts)
+    if renamed != teams_of:
+        insts = board.institutions(pl, renamed, days_of)
 
     board_rows, inst_at = [], []
     for i in range(n_players):
@@ -911,6 +941,7 @@ def build(conn, base_tab, abl_tab, occs, texts, built_date, log=print):
             "instAt": inst_at,
             "instNames": inames,
             "instAka": aka,
+            "instRegion": {k: REGIONS[k] for k in inames if k in REGIONS},
             "sides": SIDES,
             "tags": tag_list,
             "jn": jn,
