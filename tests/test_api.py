@@ -243,6 +243,25 @@ def test_requests_listing_needs_the_sheet(monkeypatch):
     assert code == 502 and "FORM_SHEET_ID" in out["error"]
 
 
+def test_roster_fix_names_a_placeholder_speaker():
+    app, conn = make_app()
+    body = {"row_id": 10, "team": "Delta B", "placeholder": "TBD", "name": "Tess Delta"}
+    code, out = app.set_roster_fix(body, True)
+    assert code == 200 and out["tournament"] == "Fixture Open 2024"
+    assert app.list_roster_fixes()[1] == {"10": {"Delta B": {"TBD": "Tess Delta"}}}
+    pipeline.run_pipeline(conn, fit_only=True, log=lambda *a, **k: None)
+    data = json.loads(gzip.decompress(conn.payloads[("data", "gz")][1]))
+    rest = json.loads(gzip.decompress(conn.payloads[("rest", "gz")][1]))
+    tess = str([p[0] for p in data["players"]].index("Tess Delta"))
+    assert [e[1] for e in rest["careers"][tess]] == ["Delta B"]
+
+    assert app.set_roster_fix(body, False)[0] == 200
+    assert conn.artifacts["roster_fixes"] == {}
+    assert app.set_roster_fix(body, False)[0] == 404
+    assert app.set_roster_fix(dict(body, row_id=999999), True)[0] == 404
+    assert app.set_roster_fix(dict(body, name=""), True)[0] == 400
+
+
 def test_hiding_a_person_also_hides_their_judging():
     conn = world.make_conn()
     conn.artifacts["hidden"] = {"players": ["judy chair"], "institutions": []}

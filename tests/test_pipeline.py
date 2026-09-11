@@ -102,6 +102,19 @@ def test_a_merge_forces_a_refit(monkeypatch):
     assert len(calls) == 2
 
 
+def test_merges_reach_score_only_games():
+    conn = world.make_conn()
+    conn.artifacts["id_merges"] = dict(conn.artifacts["id_merges"], **{"sue cape": "ann alpha"})
+    pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
+    data = json.loads(gzip.decompress(conn.payloads[("data", "gz")][1]))
+    rest = json.loads(gzip.decompress(conn.payloads[("rest", "gz")][1]))
+    names = [p[0] for p in data["players"]]
+    assert "Sue Cape" not in names
+    ann = str(names.index("Ann Alpha"))
+    assert {data["tournaments"][e[0]]["n"] for e in rest["careers"][ann]} == {
+        "Fixture Open 2024", "Cape Town WUDC 2019"}
+
+
 def test_refit_option_bypasses_the_cache(monkeypatch):
     conn = world.make_conn()
     pipeline.run_pipeline(conn, fit_only=True, log=QUIET)

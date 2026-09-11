@@ -17,7 +17,7 @@ SCALE_MULT = 2.5 * GAP_SCALE
 EXTRA_SOURCES = ("sheets", "videos", "hague", "scoreonly")
 CACHE_MODEL = "fit_cache"
 FIT_SOURCES = ("rooms.py", "fit.py", "adapters.py", "judges.py", "idnorm.py",
-               "priors.py", "settings.py")
+               "priors.py", "settings.py", "db.py")
 
 
 def mid(text: str) -> str:
@@ -92,6 +92,7 @@ def fingerprint(conn, mm: dict) -> str:
 
     feed(db.get_artifact(conn, "id_merges", {}))
     feed(sorted(db.get_artifact(conn, "excluded_rows", [])))
+    feed(db.get_artifact(conn, "roster_fixes", {}))
     for table, key in (("raw_tabs", "row_id"), ("raw_judges", "row_id"), ("extra_games", "id")):
         feed(table_stamp(conn, table, key))
     feed(sorted([row, seq, slug] for (row, seq), slug in mm.items()))

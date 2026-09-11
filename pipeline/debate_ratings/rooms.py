@@ -110,6 +110,22 @@ def resolve_roster(entry: dict, teams: dict, spk_by_team: dict) -> tuple[str, li
     return tk, [p for p in dict.fromkeys(roster or []) if p][:6]
 
 
+def apply_roster_fixes(rec: dict, fixes: dict) -> dict:
+    """Name placeholder speakers ("Speaker 2") on one team at one tournament."""
+    fix = {keyname(t): {keyname(o): n for o, n in m.items()}
+           for t, m in (fixes.get(str(rec["row"])) or {}).items()}
+    if not fix:
+        return rec
+
+    def swap(team, name):
+        return fix.get(keyname(team), {}).get(keyname(name), name)
+
+    rec = dict(rec)
+    rec["teams"] = {t: [swap(t, p) for p in ps] for t, ps in (rec.get("teams") or {}).items()}
+    rec["speaks"] = {swap(s.get("team"), n): s for n, s in (rec.get("speaks") or {}).items()}
+    return rec
+
+
 def chair_lookup(panels, row):
     out = {}
     for seq, ps in (panels.get(str(row)) or {}).items():
@@ -320,12 +336,13 @@ def rebuild_all(conn, judges_struct: dict) -> tuple[int, float, dict]:
     merges = db.get_artifact(conn, "id_merges", {})
     excluded = db.get_artifact(conn, "excluded_rows", [])
     builder = Builder(merges, excluded, judges_struct.get("p") or {})
+    fixes = db.get_artifact(conn, "roster_fixes", {})
     all_rooms = []
     with conn.cursor(name="tabs_cur") as cur:
         cur.itersize = 50
         cur.execute("SELECT payload FROM raw_tabs ORDER BY row_id")
         for (rec,) in cur:
-            all_rooms.extend(builder.build_tournament(rec))
+            all_rooms.extend(builder.build_tournament(apply_roster_fixes(rec, fixes)))
     scale = builder.speak_scale()
     for room in all_rooms:
         room["scale"] = scale

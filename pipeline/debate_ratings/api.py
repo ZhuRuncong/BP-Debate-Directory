@@ -323,6 +323,44 @@ class App:
                      "changed": True, "applies_at": "next rebuild"}
 
 
+    def list_roster_fixes(self):
+        conn = self.connect()
+        try:
+            return 200, db.get_artifact(conn, "roster_fixes", {})
+        finally:
+            conn.close()
+
+    def set_roster_fix(self, body: dict, add: bool):
+        """Name a placeholder speaker on one team at one tournament."""
+        row_id, team, placeholder = body.get("row_id"), body.get("team"), body.get("placeholder")
+        name = body.get("name") if add else ""
+        if not isinstance(row_id, int) or isinstance(row_id, bool):
+            return 400, {"error": "row_id must be an integer"}
+        if not all(isinstance(v, str) and v.strip() for v in (team, placeholder)) or \
+                (add and not (isinstance(name, str) and name.strip())):
+            return 400, {"error": "team, placeholder%s must be non-empty strings" % (" and name" if add else "")}
+        conn = self.connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT name FROM tournaments WHERE row_id = %s", (row_id,))
+                found = cur.fetchone()
+            if not found:
+                return 404, {"error": "no tournament with row_id %d" % row_id}
+            fixes = db.get_artifact(conn, "roster_fixes", {})
+            team_fixes = fixes.setdefault(str(row_id), {}).setdefault(team.strip(), {})
+            if add:
+                team_fixes[placeholder.strip()] = name.strip()
+            elif team_fixes.pop(placeholder.strip(), None) is None:
+                return 404, {"error": "no fix for %r on %r" % (placeholder, team)}
+            fixes = {r: {t: m for t, m in ts.items() if m} for r, ts in fixes.items()}
+            db.set_artifact(conn, "roster_fixes", {r: ts for r, ts in fixes.items() if ts})  # drop emptied
+        finally:
+            conn.close()
+        return 200, {"row_id": row_id, "tournament": found[0], "team": team.strip(),
+                     "placeholder": placeholder.strip(), "name": name.strip() or None,
+                     "applies_at": "next rebuild"}
+
+
 class Handler(BaseHTTPRequestHandler):
     app = None
     token = None
@@ -364,6 +402,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(*self.app.list_excluded())
         if self.path == "/requests":
             return self.send_json(*self.app.list_requests())
+        if self.path == "/roster-fixes":
+            return self.send_json(*self.app.list_roster_fixes())
         return self.send_json(404, {"error": "not found"})
 
     def do_POST(self):
@@ -389,6 +429,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(*self.app.set_excluded(body, True))
         if self.path == "/unexclude":
             return self.send_json(*self.app.set_excluded(body, False))
+        if self.path == "/roster-fix":
+            return self.send_json(*self.app.set_roster_fix(body, True))
+        if self.path == "/roster-fix/remove":
+            return self.send_json(*self.app.set_roster_fix(body, False))
         return self.send_json(404, {"error": "not found"})
 
     def log_message(self, fmt, *args):

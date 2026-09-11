@@ -120,6 +120,14 @@ def iter_rooms(conn):
 
 
 def iter_extra_games(conn, sources=None):
+    """Score-only games, with player keys resolved through id_merges like tab rosters are."""
+    merges = get_artifact(conn, "id_merges", {})
+    for g in _extra_games(conn, sources):
+        g["c"] = [[merges.get(k, k) for k in team] for team in g["c"]]
+        yield g
+
+
+def _extra_games(conn, sources):
     q = "SELECT payload FROM extra_games"
     params = ()
     if sources is not None:

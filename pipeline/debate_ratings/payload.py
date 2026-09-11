@@ -14,6 +14,7 @@ from . import board, db
 from .fit import mid
 from .idnorm import canon
 from .rooms import (
+    apply_roster_fixes,
     is_anon,
     keyname,
     norm_name,
@@ -866,11 +867,12 @@ def build(conn, base_tab, abl_tab, occs, texts, built_date, log=print):
     bias_by_round, by_text = motion_bias_tables(abl_tab, occs, texts)
 
     w = World()
+    fixes = db.get_artifact(conn, "roster_fixes", {})
     with conn.cursor(name="payload_tabs") as cur:
         cur.itersize = 20
         cur.execute("SELECT payload FROM raw_tabs ORDER BY row_id")
         for (rec,) in cur:
-            TabTournament(w, inp, rec).assemble()
+            TabTournament(w, inp, apply_roster_fixes(rec, fixes)).assemble()
     add_recovered(w, inp)
 
     players, aliases = build_players(w, inp, base, abl)
