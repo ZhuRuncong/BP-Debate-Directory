@@ -209,16 +209,19 @@ class App:
         value = target.strip() if kind == "institution" else canon(target)
         if not key or not value:
             return 400, {"error": "alias and target must be non-empty"}
-        if key == norm_key(kind, target):
+        # an institution may alias to itself to fix its displayed capitalisation ("Knust" -> "KNUST")
+        rename = kind == "institution" and key == norm_key(kind, target)
+        if key == norm_key(kind, target) and not rename:
             return 400, {"error": "alias and target are the same key"}
         conn = self.connect()
         try:
             amap = self._alias_map(conn, kind)
-            if norm_key(kind, value) in amap:
+            vkey = norm_key(kind, value)
+            if not rename and vkey in amap and norm_key(kind, amap[vkey]) != vkey:
                 return 409, {"error": "target %r is itself an alias of %r"
                              % (value, amap[norm_key(kind, value)])}
-            existing = [a for a, v in amap.items() if norm_key(kind, v) == key]
-            if existing:
+            existing = [a for a, v in amap.items() if norm_key(kind, v) == key and a != key]
+            if existing and not rename:
                 return 409, {"error": "%r is already the target of %s"
                              % (alias, sorted(existing))}
             before = amap.get(key)

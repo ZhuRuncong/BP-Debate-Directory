@@ -128,6 +128,17 @@ def test_add_alias_for_player_and_institution():
     assert conn.artifacts["inst_alias"]["skip"] == []
 
 
+def test_an_institution_can_alias_to_itself_to_fix_capitals():
+    app, conn = make_app()
+    assert app.add_alias({"kind": "institution", "alias": "UoN", "target": "Nairobi"})[0] == 200
+    code, out = app.add_alias({"kind": "institution", "alias": "Knust", "target": "KNUST"})
+    assert code == 200 and conn.artifacts["inst_alias"]["alias"]["knust"] == "KNUST"
+    # a renamed institution can still be the target of real aliases
+    assert app.add_alias({"kind": "institution", "alias": "Kwame Nkrumah", "target": "KNUST"})[0] == 200
+    assert app.add_alias({"kind": "institution", "alias": "nairobi", "target": "NAIROBI"})[0] == 200
+    assert app.add_alias({"kind": "player", "alias": "Ann Alpha", "target": "ANN ALPHA"})[0] == 400
+
+
 def test_add_alias_rejects_chains_and_bad_input():
     app, conn = make_app()
     # id_merges already maps "ned delta" -> "edward delta"
