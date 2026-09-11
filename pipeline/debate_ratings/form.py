@@ -224,9 +224,17 @@ def redact(site: Site, hidden: dict, names: list) -> dict:
 def merge(site: Site, names: list) -> dict:
     found = [site.find(n) for n in names]
     missing = [n for n, f in zip(names, found, strict=True) if not f]
-    if missing:
-        return {"status": "review", "note": "not on the site: " + ", ".join(missing)}
+    # unmatched names are usually typos or junk; merge whatever did match
     keys = list(dict.fromkeys(k for f in found for k in sorted(f)))
+    out = merge_keys(site, keys)
+    if missing:
+        out["note"] = "; ".join(filter(None, ["not on the site: " + ", ".join(missing), out.get("note")]))
+    return out
+
+
+def merge_keys(site: Site, keys: list) -> dict:
+    if not keys:
+        return {"status": "review", "note": "no name matched a profile"}
     if len(keys) < 2:
         return {"status": "done", "merged": {}, "note": "already one profile"}
     # "Viet" may join "Việt", but "Việt" and "Viết" are different names

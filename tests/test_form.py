@@ -134,6 +134,15 @@ def test_merge_repoints_old_aliases_at_the_survivor():
     assert "edward delta cape" not in merges
 
 
+def test_merge_goes_ahead_without_unmatched_names():
+    conn = published()
+    [req] = sheet(row("1", "Merge", "Ann Alpha", "Nobody Here", "Ann Cape"))
+    assert form.apply(conn, [req], log=QUIET) == 1
+    out = outcome(conn, req)
+    assert (out["status"], out["merged"]) == ("done", {"ann cape": "ann alpha"})
+    assert out["note"] == "not on the site: Nobody Here"
+
+
 def test_merge_never_keeps_a_bare_first_name():
     conn = published()
     [req] = sheet(row("1", "Merge", "Ann", "Ann Cape"))
