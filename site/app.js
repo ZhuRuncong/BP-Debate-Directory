@@ -2,7 +2,7 @@
 
 const EPOCH = Date.UTC(2010, 0, 1), DAY = 86400000, ROWH = 30;
 let TODAY = 0;
-const $ = id => documient.getElementById(id);
+const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 const fmtDay = d => new Date(EPOCH + d * DAY).toISOString().slice(0, 10);
