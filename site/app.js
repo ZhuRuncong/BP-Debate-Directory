@@ -2,7 +2,7 @@
 
 const EPOCH = Date.UTC(2010, 0, 1), DAY = 86400000, ROWH = 30;
 let TODAY = 0;
-const $ = id => document.getElementById(id);
+const $ = id => documient.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 const fmtDay = d => new Date(EPOCH + d * DAY).toISOString().slice(0, 10);
@@ -33,7 +33,7 @@ let judgeQ = "", judgeMinBS = JUDGE_BS_DEFAULT;
 let judgeSort = { k: "rounds", dir: -1 }, judgeCache = { key: undefined, rows: null };
 let derived = [];
 let listed = [];
-const F = { minT: 5, from: "", region: "" };
+const F = { minT: 4, from: "", region: "" };
 const REGION_LIST = ["Americas", "Europe", "Asia", "Africa", "Australia"];
 let instRegionF = "", judgeRegion = "";
 const regionPick = (id, val) => `<div class="f"><label for="${id}">Region</label>
@@ -43,7 +43,7 @@ let sortKey = "val", sortDir = -1, highlight = -1;
 let view = { v: "board" };
 let tourQ = "", tourSort = { k: "d", dir: -1 }, champs = null, champsRest = false;
 const INST_BS_DEFAULT = 1500;
-const BAL_BS_DEFAULT = 1700;
+const BAL_BS_DEFAULT = 1500;
 let instQ = "", instMinBS = INST_BS_DEFAULT, instSort = { k: "wins", dir: -1 };
 const INST_MINT_DEFAULT = 3;
 let instMinT = INST_MINT_DEFAULT, instFrom = "";
@@ -205,7 +205,7 @@ function renderBoard(m) {
   $("fr").onchange = e => { F.region = e.target.value; highlight = -1; update(); };
   $("fn").oninput = e => jumpTo(e.target.value.trim().toLowerCase());
   $("fn").onkeydown = e => { if (e.key === "Enter" && highlight >= 0) go("player", listed[highlight].i); };
-  $("freset").onclick = () => { Object.assign(F, { minT: 5, from: "", region: "" }); highlight = -1; renderBoard(m); update(); };
+  $("freset").onclick = () => { Object.assign(F, { minT: 4, from: "", region: "" }); highlight = -1; renderBoard(m); update(); };
   $("fcsv").onclick = exportCSV;
   m.onscroll = paint;
   update();
