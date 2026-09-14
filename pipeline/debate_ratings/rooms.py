@@ -5,7 +5,7 @@ import re
 import statistics
 
 from . import db
-from .idnorm import canon, clean_display
+from .idnorm import SPLIT_SEP, canon, clean_display
 from .settings import EPOCH
 
 
@@ -164,9 +164,6 @@ def find_chair(lookup, seq, teamset):
     if best_n >= max(2, len(teamset) - 1) and not tied:
         return best
     return None
-
-
-SPLIT_SEP = "\x1f"
 
 
 def normalize_splits(id_splits: dict) -> dict:

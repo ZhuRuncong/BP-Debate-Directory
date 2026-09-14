@@ -3,6 +3,7 @@ import json
 import psycopg
 
 from . import settings
+from .idnorm import SPLIT_SEP
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tournaments (
@@ -120,10 +121,27 @@ def iter_rooms(conn):
 
 
 def iter_extra_games(conn, sources=None):
-    """Score-only games, with player keys resolved through id_merges like tab rosters are."""
+    """Score-only games, with player keys resolved through id_merges like tab rosters are.
+
+    These entries carry no team name, so an id_splits tag is matched by
+    (row, name) alone, across whichever team bucket it was recorded under.
+    """
     merges = get_artifact(conn, "id_merges", {})
+    tag_by_row = {}
+    for row, teams in get_artifact(conn, "id_splits", {}).items():
+        by_name = tag_by_row.setdefault(row, {})
+        for names in teams.values():
+            for nm, tag in names.items():
+                by_name[nm.strip().casefold()] = tag
+
+    def resolve(row, k):
+        tag = tag_by_row.get(row, {}).get(k)
+        kk = k + SPLIT_SEP + tag if tag else k
+        return merges.get(kk, kk)
+
     for g in _extra_games(conn, sources):
-        g["c"] = [[merges.get(k, k) for k in team] for team in g["c"]]
+        row = str(g["row"])
+        g["c"] = [[resolve(row, k) for k in team] for team in g["c"]]
         yield g
 
 

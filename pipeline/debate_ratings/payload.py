@@ -542,7 +542,8 @@ def build_players(w: World, inp: Inputs, base: dict, abl: dict):
         if k in inp.hidden_players:  # keep the slot so every index stays stable
             players.append([HIDDEN_NAME, None, None, None, None, None])
             continue
-        disp = inp.display.get(k) or k.title()
+        base_k = k.split(SPLIT_SEP, 1)[0]
+        disp = inp.display.get(k) or inp.display.get(base_k) or base_k.title()
         alt = sorted(n for n in alias_of.get(k, ()) if n.casefold() != disp.casefold())
         if alt:
             aliases[str(len(players))] = alt

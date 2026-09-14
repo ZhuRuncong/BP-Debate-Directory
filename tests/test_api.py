@@ -329,7 +329,8 @@ def test_split_identity_without_target_keeps_the_display_name():
     pipeline.run_pipeline(conn, fit_only=True, log=lambda *a, **k: None)
     data = json.loads(gzip.decompress(conn.payloads[("data", "gz")][1]))
     names = [p[0] for p in data["players"]]
-    assert names.count("Ann Alpha") == 2  # the tab entry, plus her separate scoreonly game
+    # her tab entry and her same-row scoreonly game are tagged together as one identity
+    assert names.count("Ann Alpha") == 1
 
     # re-splitting the same occurrences is idempotent (same tag, not a third identity)
     code2, out2 = app.split_identity({

@@ -1,6 +1,8 @@
 import re
 import unicodedata
 
+SPLIT_SEP = "\x1f"  # tags an id-split identity onto a canon key; never in a real name
+
 SPACES = re.compile('[\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]')
 EMOJI = re.compile(
     '[\U0001F000-\U0001FAFF\u2190-\u2BFF\u3030\u303D\u3297\u3299'

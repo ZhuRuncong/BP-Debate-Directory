@@ -115,15 +115,31 @@ def test_merges_reach_score_only_games():
         "Fixture Open 2024", "Cape Town WUDC 2019"}
 
 
-def test_id_split_allows_two_identities_with_the_same_display_name():
+def test_id_split_applies_row_wide_across_tab_and_extra_games():
     conn = world.make_conn()
-    # Ann Alpha's tab appearance (row 10, Alpha A) is tagged apart from her
-    # separate scoreonly extra_games entry, which keeps the bare "ann alpha" key.
+    # Ann Alpha's tab appearance (row 10, Alpha A) and her separate scoreonly
+    # "Trial" entry (extra_games carries no team) are the same tournament, so
+    # tagging her tab occurrence also tags the scoreonly one: one identity,
+    # not two orphaned halves.
     conn.artifacts["id_splits"] = {"10": {"alpha a": {"Ann Alpha": "other-ann"}}}
     pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
     data = json.loads(gzip.decompress(conn.payloads[("data", "gz")][1]))
     names = [p[0] for p in data["players"]]
-    assert names.count("Ann Alpha") == 2
+    assert names.count("Ann Alpha") == 1
+
+
+def test_id_split_keeps_two_identities_coexisting_by_display_name():
+    conn = world.make_conn()
+    # Tagging a team bucket that doesn't match Ed Beta's real tab team ("beta
+    # a") only reaches her team-less scoreonly "Trial" entry, leaving her tab
+    # identity untouched: two separate people both showing as "Ed Beta".
+    conn.artifacts["id_splits"] = {"10": {"extra": {"Ed Beta": "trial-ed"}}}
+    pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
+    data = json.loads(gzip.decompress(conn.payloads[("data", "gz")][1]))
+    names = [p[0] for p in data["players"]]
+    assert names.count("Ed Beta") == 2
+
+
 
 
 def test_weighted_recent_speaks_normalizes_for_short_careers():
