@@ -166,19 +166,34 @@ def find_chair(lookup, seq, teamset):
     return None
 
 
+SPLIT_SEP = "\x1f"
+
+
+def normalize_splits(id_splits: dict) -> dict:
+    """Key-normalize {row: {team: {name: tag}}} the same way apply_roster_fixes does."""
+    return {row: {keyname(team): {keyname(nm): tag for nm, tag in names.items()}
+                 for team, names in teams.items()}
+           for row, teams in (id_splits or {}).items()}
+
+
 class Builder:
-    def __init__(self, merges: dict, excluded_rows: list, panels: dict):
+    def __init__(self, merges: dict, excluded_rows: list, panels: dict, id_splits: dict = None):
         self.merges = merges
         self.excluded = set(excluded_rows)
         self.panels = panels
+        self.id_splits = normalize_splits(id_splits)
         self.stats = collections.Counter()
         self.speak_devs = []
         self.display = {}
 
-    def pkey(self, s):
+    def pkey(self, s, row=None, team=None):
         if s.startswith("ANON::"):
             return s.casefold()
         k = canon(s)
+        if row is not None and team is not None:
+            tag = self.id_splits.get(str(row), {}).get(keyname(team), {}).get(keyname(s))
+            if tag:
+                k = k + SPLIT_SEP + tag
         return self.merges.get(k, k)
 
     def build_tournament(self, rec: dict) -> list[dict]:
@@ -256,7 +271,7 @@ class Builder:
                         stats["roster truncated to 2"] += 1
                     kept, mapped, seen_k = [], [], set()
                     for p in roster:
-                        k = self.pkey(p)
+                        k = self.pkey(p, row, e["team"])
                         if k in seen_k:
                             stats["teammates merged to one"] += 1
                             continue
@@ -346,7 +361,8 @@ def rebuild_all(conn, judges_struct: dict) -> tuple[int, float, dict]:
     """Rebuild the rooms table from raw tabs; returns (n_rooms, speak_scale, stats)."""
     merges = db.get_artifact(conn, "id_merges", {})
     excluded = db.get_artifact(conn, "excluded_rows", [])
-    builder = Builder(merges, excluded, judges_struct.get("p") or {})
+    id_splits = db.get_artifact(conn, "id_splits", {})
+    builder = Builder(merges, excluded, judges_struct.get("p") or {}, id_splits)
     fixes = db.get_artifact(conn, "roster_fixes", {})
     all_rooms = []
     with conn.cursor(name="tabs_cur") as cur:

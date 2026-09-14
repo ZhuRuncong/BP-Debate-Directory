@@ -1,4 +1,5 @@
 import datetime
+import hashlib
 import hmac
 import json
 import os
@@ -395,14 +396,20 @@ class App:
         return 200, {"name": name.strip(), "key": key, "occurrences": occurrences}
 
     def split_identity(self, body: dict):
-        """Peel named occurrences of a shared player key off into a distinct identity."""
+        """Peel named occurrences of a shared player key off into a distinct identity.
+
+        With `target`, the occurrences are renamed (a real alternate spelling).
+        Without it, the occurrences keep their original spelling on-screen but
+        are tagged onto a separate internal identity, for two different people
+        who happen to share a name exactly.
+        """
         name, target = body.get("name"), body.get("target")
         occurrences = body.get("occurrences")
         if not isinstance(name, str) or not name.strip():
             return 400, {"error": "name must be a non-empty string"}
-        if not isinstance(target, str) or not target.strip():
-            return 400, {"error": "target must be a non-empty string"}
-        if canon(target) == canon(name):
+        if target is not None and (not isinstance(target, str) or not target.strip()):
+            return 400, {"error": "target must be a non-empty string, or omitted"}
+        if target and canon(target) == canon(name):
             return 400, {"error": "target must be a different identity than name"}
         if not isinstance(occurrences, list) or not occurrences:
             return 400, {"error": "occurrences must be a non-empty list of {row_id, team}"}
@@ -422,13 +429,23 @@ class App:
             missing = sorted({r for r, _ in parsed} - set(names))
             if missing:
                 return 404, {"error": "no tournament with row_id in %s" % missing}
-            fixes = db.get_artifact(conn, "roster_fixes", {})
-            for row_id, team in parsed:
-                fixes.setdefault(str(row_id), {}).setdefault(team, {})[name.strip()] = target.strip()
-            db.set_artifact(conn, "roster_fixes", fixes)
+            if target:
+                fixes = db.get_artifact(conn, "roster_fixes", {})
+                for row_id, team in parsed:
+                    fixes.setdefault(str(row_id), {}).setdefault(team, {})[name.strip()] = target.strip()
+                db.set_artifact(conn, "roster_fixes", fixes)
+            else:
+                # A stable tag for this exact occurrence set, so re-splitting the
+                # same set is idempotent rather than minting a new identity.
+                tag = hashlib.sha1("|".join(sorted("%d:%s" % p for p in parsed))
+                                   .encode("utf-8")).hexdigest()[:10]
+                splits = db.get_artifact(conn, "id_splits", {})
+                for row_id, team in parsed:
+                    splits.setdefault(str(row_id), {}).setdefault(team, {})[name.strip()] = tag
+                db.set_artifact(conn, "id_splits", splits)
         finally:
             conn.close()
-        return 200, {"name": name.strip(), "target": target.strip(),
+        return 200, {"name": name.strip(), "target": target.strip() if target else None,
                      "occurrences": [{"row_id": r, "team": t, "tournament": names[r]} for r, t in parsed],
                      "applies_at": "next rebuild"}
 
@@ -436,6 +453,13 @@ class App:
         conn = self.connect()
         try:
             return 200, db.get_artifact(conn, "roster_fixes", {})
+        finally:
+            conn.close()
+
+    def list_id_splits(self):
+        conn = self.connect()
+        try:
+            return 200, db.get_artifact(conn, "id_splits", {})
         finally:
             conn.close()
 
@@ -626,6 +650,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(*self.app.list_requests())
         if self.path == "/roster-fixes":
             return self.send_json(*self.app.list_roster_fixes())
+        if self.path == "/id-splits":
+            return self.send_json(*self.app.list_id_splits())
         if self.path == "/ongoing":
             return self.send_json(*self.app.list_ongoing())
         return self.send_json(404, {"error": "not found"})

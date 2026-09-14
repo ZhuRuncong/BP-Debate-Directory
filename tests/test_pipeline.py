@@ -115,6 +115,17 @@ def test_merges_reach_score_only_games():
         "Fixture Open 2024", "Cape Town WUDC 2019"}
 
 
+def test_id_split_allows_two_identities_with_the_same_display_name():
+    conn = world.make_conn()
+    # Ann Alpha's tab appearance (row 10, Alpha A) is tagged apart from her
+    # separate scoreonly extra_games entry, which keeps the bare "ann alpha" key.
+    conn.artifacts["id_splits"] = {"10": {"alpha a": {"Ann Alpha": "other-ann"}}}
+    pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
+    data = json.loads(gzip.decompress(conn.payloads[("data", "gz")][1]))
+    names = [p[0] for p in data["players"]]
+    assert names.count("Ann Alpha") == 2
+
+
 def test_weighted_recent_speaks_normalizes_for_short_careers():
     assert payload.weighted_recent_speaks([]) is None
     assert payload.weighted_recent_speaks([80]) == 80.0

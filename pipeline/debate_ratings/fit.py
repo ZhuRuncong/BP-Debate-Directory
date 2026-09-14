@@ -93,6 +93,7 @@ def fingerprint(conn, mm: dict) -> str:
     feed(db.get_artifact(conn, "id_merges", {}))
     feed(sorted(db.get_artifact(conn, "excluded_rows", [])))
     feed(db.get_artifact(conn, "roster_fixes", {}))
+    feed(db.get_artifact(conn, "id_splits", {}))
     for table, key in (("raw_tabs", "row_id"), ("raw_judges", "row_id"), ("extra_games", "id")):
         feed(table_stamp(conn, table, key))
     feed(sorted([row, seq, slug] for (row, seq), slug in mm.items()))

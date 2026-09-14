@@ -317,6 +317,28 @@ def test_split_identity_validates_input():
                                "occurrences": [{"row_id": 999999, "team": "x"}]})[0] == 404
 
 
+def test_split_identity_without_target_keeps_the_display_name():
+    app, conn = make_app()
+    code, out = app.split_identity({
+        "name": "Ann Alpha", "occurrences": [{"row_id": 10, "team": "alpha a"}]})
+    assert code == 200 and out["target"] is None
+    fixes = conn.artifacts["id_splits"]
+    tag = fixes["10"]["alpha a"]["Ann Alpha"]
+    assert tag
+
+    pipeline.run_pipeline(conn, fit_only=True, log=lambda *a, **k: None)
+    data = json.loads(gzip.decompress(conn.payloads[("data", "gz")][1]))
+    names = [p[0] for p in data["players"]]
+    assert names.count("Ann Alpha") == 2  # the tab entry, plus her separate scoreonly game
+
+    # re-splitting the same occurrences is idempotent (same tag, not a third identity)
+    code2, out2 = app.split_identity({
+        "name": "Ann Alpha", "occurrences": [{"row_id": 10, "team": "alpha a"}]})
+    assert conn.artifacts["id_splits"]["10"]["alpha a"]["Ann Alpha"] == tag
+
+    assert app.list_id_splits() == (200, {"10": {"alpha a": {"Ann Alpha": tag}}})
+
+
 def test_normalize_tournament_url_reduces_to_the_tab_root():
     assert api.normalize_tournament_url(
         "https://tab.example/manoa2024/results/round/3/") == "https://tab.example/manoa2024"

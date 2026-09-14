@@ -15,10 +15,12 @@ from . import board, db
 from .fit import mid
 from .idnorm import canon
 from .rooms import (
+    SPLIT_SEP,
     apply_roster_fixes,
     is_anon,
     keyname,
     norm_name,
+    normalize_splits,
     prelim_seq_list,
     resolve_roster,
     side_code,
@@ -149,6 +151,7 @@ HIDDEN_NAME = "(hidden)"
 @dataclass
 class Inputs:
     merges: dict
+    id_splits: dict
     display: dict
     display_raw: dict
     clean: dict
@@ -162,8 +165,12 @@ class Inputs:
     hidden_players: set
     hidden_insts: set
 
-    def pkey(self, name: str) -> str:
+    def pkey(self, name: str, row=None, team=None) -> str:
         k = canon(name)
+        if row is not None and team is not None:
+            tag = self.id_splits.get(str(row), {}).get(keyname(team), {}).get(keyname(name))
+            if tag:
+                k = k + SPLIT_SEP + tag
         return self.merges.get(k, k)
 
 
@@ -193,6 +200,7 @@ def load_inputs(conn) -> Inputs:
 
     return Inputs(
         merges=merges,
+        id_splits=normalize_splits(db.get_artifact(conn, "id_splits", {})),
         display=display,
         display_raw=db.get_artifact(conn, "display_raw", {}),
         clean=db.get_artifact(conn, "motions_clean", {}),
@@ -323,7 +331,7 @@ class TabTournament:
         best = max(e[3] for e in ents)
         room_acc = []
         for tk, traw, roster, sort, side in ents:
-            pids = [self.w.pid.id(self.inp.pkey(p)) for p in roster if not is_anon(p)]
+            pids = [self.w.pid.id(self.inp.pkey(p, self.row, tk)) for p in roster if not is_anon(p)]
             acc = None
             if is_prelim:
                 acc = {"refs": [], "pids": pids, "side": side}
@@ -341,7 +349,7 @@ class TabTournament:
             for p in roster:
                 if is_anon(p):
                     continue
-                i = self.w.pid.id(self.inp.pkey(p))
+                i = self.w.pid.id(self.inp.pkey(p, self.row, tk))
                 e = self.tp.get(i)
                 if e is None:
                     team = (self.rec.get("team_names") or {}).get(tk) or norm_name(traw or tk)
@@ -362,7 +370,7 @@ class TabTournament:
                     acc["refs"].append(e["r"][-1])
                 for q in roster:
                     if q is not p and not is_anon(q):
-                        e["mates"][self.inp.pkey(q)] += 1
+                        e["mates"][self.inp.pkey(q, self.row, tk)] += 1
         if is_prelim and len(room_acc) >= 2:
             self.w.rooms_pp.append((self.tid, ridx, room_acc))
 

@@ -11,5 +11,7 @@ build/
 server/server
 server/server.exe
 tagger_model/
+scripts/review_state.json
+scripts/review_merges.py
 *.md
 docs/
