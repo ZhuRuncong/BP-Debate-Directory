@@ -285,6 +285,38 @@ def test_roster_fix_names_a_placeholder_speaker():
     assert app.set_roster_fix(dict(body, name=""), True)[0] == 400
 
 
+def test_same_name_lists_occurrences_and_split_makes_a_distinct_identity():
+    app, conn = make_app()
+    pipeline.run_pipeline(conn, fit_only=True, log=lambda *a, **k: None)
+    code, out = app.same_name({"name": "Cara Alpha"})
+    assert code == 200 and out["key"] == "cara alpha"
+    assert out["occurrences"] == [{"row_id": 10, "team": "alpha b", "tournament": "Fixture Open 2024"}]
+
+    code, out = app.split_identity({
+        "name": "Cara Alpha", "target": "Cara Alpha Two",
+        "occurrences": [{"row_id": 10, "team": "alpha b"}]})
+    assert code == 200
+    assert conn.artifacts["roster_fixes"] == {"10": {"alpha b": {"Cara Alpha": "Cara Alpha Two"}}}
+    assert out["occurrences"] == [{"row_id": 10, "team": "alpha b", "tournament": "Fixture Open 2024"}]
+
+    pipeline.run_pipeline(conn, fit_only=True, log=lambda *a, **k: None)
+    data = json.loads(gzip.decompress(conn.payloads[("data", "gz")][1]))
+    names = [p[0] for p in data["players"]]
+    assert "Cara Alpha" not in names
+    assert "Cara Alpha Two" in names
+
+
+def test_split_identity_validates_input():
+    app, _ = make_app()
+    assert app.split_identity({"name": "", "target": "B", "occurrences": [{"row_id": 10, "team": "x"}]})[0] == 400
+    assert app.split_identity({"name": "A", "target": "A", "occurrences": [{"row_id": 10, "team": "x"}]})[0] == 400
+    assert app.split_identity({"name": "A", "target": "B", "occurrences": []})[0] == 400
+    assert app.split_identity({"name": "A", "target": "B",
+                               "occurrences": [{"row_id": "10", "team": "x"}]})[0] == 400
+    assert app.split_identity({"name": "A", "target": "B",
+                               "occurrences": [{"row_id": 999999, "team": "x"}]})[0] == 404
+
+
 def test_hiding_a_person_also_hides_their_judging():
     conn = world.make_conn()
     conn.artifacts["hidden"] = {"players": ["judy chair"], "institutions": []}

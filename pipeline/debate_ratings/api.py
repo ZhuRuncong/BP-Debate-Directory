@@ -345,6 +345,70 @@ class App:
             return 404, {"error": "no tournament with row_id %d" % row_id}
         return 200, {"row_id": row_id, "name": found[0], "applies_at": "next normal run"}
 
+    def same_name(self, body: dict):
+        """Every (row, team) where a player key currently appears, to help pick which belong to whom."""
+        name = body.get("name")
+        if not isinstance(name, str) or not name.strip():
+            return 400, {"error": "name must be a non-empty string"}
+        conn = self.connect()
+        try:
+            merges = db.get_artifact(conn, "id_merges", {})
+            key = merges.get(canon(name), canon(name))
+            seen = {}
+            for room in db.iter_rooms(conn):
+                for t in room["teams"]:
+                    if key in (t.get("roster") or []):
+                        seen[(room["row"], t["team"])] = None
+            with conn.cursor() as cur:
+                cur.execute("SELECT row_id, name FROM tournaments WHERE row_id = ANY(%s)",
+                            (list({r for r, _ in seen}),))
+                names = dict(cur.fetchall())
+            for r, tm in seen:
+                seen[(r, tm)] = names.get(r)
+        finally:
+            conn.close()
+        occurrences = [{"row_id": r, "team": tm, "tournament": nm}
+                       for (r, tm), nm in sorted(seen.items())]
+        return 200, {"name": name.strip(), "key": key, "occurrences": occurrences}
+
+    def split_identity(self, body: dict):
+        """Peel named occurrences of a shared player key off into a distinct identity."""
+        name, target = body.get("name"), body.get("target")
+        occurrences = body.get("occurrences")
+        if not isinstance(name, str) or not name.strip():
+            return 400, {"error": "name must be a non-empty string"}
+        if not isinstance(target, str) or not target.strip():
+            return 400, {"error": "target must be a non-empty string"}
+        if canon(target) == canon(name):
+            return 400, {"error": "target must be a different identity than name"}
+        if not isinstance(occurrences, list) or not occurrences:
+            return 400, {"error": "occurrences must be a non-empty list of {row_id, team}"}
+        parsed = []
+        for o in occurrences:
+            row_id, team = (o or {}).get("row_id"), (o or {}).get("team")
+            if not isinstance(row_id, int) or isinstance(row_id, bool) or \
+                    not isinstance(team, str) or not team.strip():
+                return 400, {"error": "each occurrence needs an integer row_id and a non-empty team"}
+            parsed.append((row_id, team.strip()))
+        conn = self.connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT row_id, name FROM tournaments WHERE row_id = ANY(%s)",
+                            (list({r for r, _ in parsed}),))
+                names = dict(cur.fetchall())
+            missing = sorted({r for r, _ in parsed} - set(names))
+            if missing:
+                return 404, {"error": "no tournament with row_id in %s" % missing}
+            fixes = db.get_artifact(conn, "roster_fixes", {})
+            for row_id, team in parsed:
+                fixes.setdefault(str(row_id), {}).setdefault(team, {})[name.strip()] = target.strip()
+            db.set_artifact(conn, "roster_fixes", fixes)
+        finally:
+            conn.close()
+        return 200, {"name": name.strip(), "target": target.strip(),
+                     "occurrences": [{"row_id": r, "team": t, "tournament": names[r]} for r, t in parsed],
+                     "applies_at": "next rebuild"}
+
     def list_roster_fixes(self):
         conn = self.connect()
         try:
@@ -455,6 +519,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(*self.app.set_excluded(body, False))
         if self.path == "/recrawl":
             return self.send_json(*self.app.recrawl(body))
+        if self.path == "/same-name":
+            return self.send_json(*self.app.same_name(body))
+        if self.path == "/split":
+            return self.send_json(*self.app.split_identity(body))
         if self.path == "/roster-fix":
             return self.send_json(*self.app.set_roster_fix(body, True))
         if self.path == "/roster-fix/remove":
