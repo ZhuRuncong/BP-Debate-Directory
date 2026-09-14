@@ -7,6 +7,7 @@ SHEET_CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?forma
 FORM_SHEET_ID = os.environ.get("FORM_SHEET_ID", "")
 GOOGLE_SERVICE_ACCOUNT = os.environ.get("GOOGLE_SERVICE_ACCOUNT", "")
 FORM_POLL_MINUTES = float(os.environ.get("FORM_POLL_MINUTES", "15"))
+ONGOING_POLL_MINUTES = float(os.environ.get("ONGOING_POLL_MINUTES", "30"))
 MIN_AGE_DAYS = int(os.environ.get("MIN_AGE_DAYS", "7"))
 QUALITY_PRIOR_STRENGTH = float(os.environ.get("QUALITY_PRIOR_STRENGTH", "0"))
 MAX_ROOM_DROP = float(os.environ.get("MAX_ROOM_DROP", "0.05"))

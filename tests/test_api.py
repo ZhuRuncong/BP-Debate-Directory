@@ -317,6 +317,101 @@ def test_split_identity_validates_input():
                                "occurrences": [{"row_id": 999999, "team": "x"}]})[0] == 404
 
 
+def test_normalize_tournament_url_reduces_to_the_tab_root():
+    assert api.normalize_tournament_url(
+        "https://tab.example/manoa2024/results/round/3/") == "https://tab.example/manoa2024"
+
+
+def _live_rec(name, teams, complete):
+    rooms = [[{"x": 1}]] if complete else None
+    return {"name": name, "teams": teams,
+            "rounds": [{"seq": 1, "stage": "P", "name": "R1", "rooms": rooms},
+                       {"seq": 2, "stage": "E", "name": "Final", "rooms": rooms}],
+            "errors": []}
+
+
+def test_watch_ongoing_hides_the_roster_while_incomplete(monkeypatch):
+    app, conn = make_app()
+    rec = _live_rec("Ongoing Champs", {"A": ["Peer One", "Peer Two"]}, complete=False)
+    monkeypatch.setattr(api, "fetch_live_tournament", lambda url: rec)
+    code, out = app.watch_ongoing({"url": "http://tab.example/onc/results/round/2/"})
+    assert code == 200 and out["ongoing"] is True
+    assert out["root"] == "http://tab.example/onc"
+    assert out["hidden"] == ["peer one", "peer two"]
+    assert conn.artifacts["hidden"]["players"] == ["peer one", "peer two"]
+    watch = conn.artifacts["ongoing_watches"]["http://tab.example/onc"]
+    assert watch["players"] == ["peer one", "peer two"] and watch["name"] == "Ongoing Champs"
+    assert app.watch_ongoing({"url": ""})[0] == 400
+
+
+def test_watch_ongoing_is_a_noop_once_already_complete(monkeypatch):
+    app, conn = make_app()
+    rec = _live_rec("Done Champs", {"A": ["Peer One"]}, complete=True)
+    monkeypatch.setattr(api, "fetch_live_tournament", lambda url: rec)
+    code, out = app.watch_ongoing({"url": "http://tab.example/done"})
+    assert code == 200 and out["ongoing"] is False and out["hidden"] == []
+    assert "ongoing_watches" not in conn.artifacts
+
+
+def test_report_ongoing_gives_sanitized_status_messages(monkeypatch):
+    app, conn = make_app()
+    assert app.report_ongoing({"url": ""}) == (400, {"status": "error", "message": "enter a tournament URL"})
+
+    monkeypatch.setattr(api, "fetch_live_tournament", lambda url: (_ for _ in ()).throw(Exception("boom")))
+    assert app.report_ongoing({"url": "http://tab.example/onc"}) == (
+        200, {"status": "not_found", "message": "could not find that tournament"})
+
+    monkeypatch.setattr(api, "fetch_live_tournament",
+                        lambda url: _live_rec("Done Champs", {"A": ["Peer One"]}, complete=True))
+    assert app.report_ongoing({"url": "http://tab.example/done"}) == (
+        200, {"status": "not_ongoing", "message": "that tournament is not ongoing"})
+
+    monkeypatch.setattr(api, "fetch_live_tournament",
+                        lambda url: _live_rec("Ongoing Champs", {"A": ["Peer One"]}, complete=False))
+    assert app.report_ongoing({"url": "http://tab.example/onc"}) == (
+        200, {"status": "success", "message": "hidden until the tournament finishes"})
+    assert conn.artifacts["hidden"]["players"] == ["peer one"]
+
+
+def test_ongoing_report_is_public_with_cors_and_needs_no_token(monkeypatch):
+    monkeypatch.setattr(api, "fetch_live_tournament",
+                        lambda url: _live_rec("Done Champs", {"A": ["Peer One"]}, complete=True))
+    app, conn = make_app()
+    api.Handler.app = app
+    api.Handler.token = "sekrit"
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), api.Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = "http://127.0.0.1:%d" % srv.server_address[1]
+    try:
+        r = httpx.post(base + "/ongoing/report", json={"url": "http://tab.example/done"})
+        assert r.status_code == 200
+        assert r.headers["Access-Control-Allow-Origin"] == "*"
+        assert r.json()["status"] == "not_ongoing"
+        r = httpx.options(base + "/ongoing/report")
+        assert r.status_code == 204
+        assert r.headers["Access-Control-Allow-Origin"] == "*"
+        assert httpx.get(base + "/ongoing").status_code == 401  # admin routes still gated
+    finally:
+        srv.shutdown()
+
+
+def test_sweep_ongoing_unhides_once_the_tab_completes(monkeypatch):
+    app, conn = make_app()
+    monkeypatch.setattr(api, "fetch_live_tournament",
+                        lambda url: _live_rec("Ongoing Champs", {"A": ["Peer One"]}, complete=False))
+    app.watch_ongoing({"url": "http://tab.example/onc"})
+    assert conn.artifacts["hidden"]["players"] == ["peer one"]
+    assert app.list_ongoing()[1]["http://tab.example/onc"]["name"] == "Ongoing Champs"
+
+    monkeypatch.setattr(api, "fetch_live_tournament",
+                        lambda url: _live_rec("Ongoing Champs", {"A": ["Peer One"]}, complete=True))
+    res = app.sweep_ongoing(log=lambda *a, **k: None)
+    assert res == {"checked": 1, "completed": ["http://tab.example/onc"]}
+    assert conn.artifacts["hidden"]["players"] == []
+    assert conn.artifacts["ongoing_watches"] == {}
+    assert app.sweep_ongoing() == {"checked": 0, "completed": []}
+
+
 def test_hiding_a_person_also_hides_their_judging():
     conn = world.make_conn()
     conn.artifacts["hidden"] = {"players": ["judy chair"], "institutions": []}

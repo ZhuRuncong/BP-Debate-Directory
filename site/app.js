@@ -1,6 +1,7 @@
 "use strict";
 
 const EPOCH = Date.UTC(2010, 0, 1), DAY = 86400000, ROWH = 30;
+const ONGOING_API = "https://api-production-0108.up.railway.app/ongoing/report";
 let TODAY = 0;
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -924,6 +925,40 @@ function renderBalance(m) {
   fillBalance();
 }
 
+function renderIntegrity(m) {
+  m.innerHTML = `<div class="wrap"><div class="card">
+    <h3>Tournament Integrity</h3>
+    <p>Add ongoing tournaments to mitigate the risk of ratings based clout calling</p>
+    <div class="f"><label for="ogUrl">Tournament URL</label>
+      <input type="text" id="ogUrl" size="40" placeholder="https://"></div>
+    <div class="f"><label>&nbsp;</label><button class="btn" id="ogSubmit">Submit</button></div>
+    <p id="ogMsg"></p>
+  </div></div>`;
+  const submit = async () => {
+    const url = $("ogUrl").value.trim();
+    const msg = $("ogMsg");
+    if (!url) { msg.textContent = "Enter a tournament URL."; msg.className = "mut"; return; }
+    $("ogSubmit").disabled = true;
+    msg.textContent = "Checking…"; msg.className = "mut";
+    try {
+      const r = await fetch(ONGOING_API, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const out = await r.json();
+      msg.textContent = out.message || "Something went wrong.";
+      msg.className = out.status === "success" ? "" : "mut";
+    } catch {
+      msg.textContent = "Could not reach the integrity service.";
+      msg.className = "mut";
+    } finally {
+      $("ogSubmit").disabled = false;
+    }
+  };
+  $("ogSubmit").onclick = submit;
+  $("ogUrl").addEventListener("keydown", e => { if (e.key === "Enter") submit(); });
+}
+
 function championOf(ti) {
   if (!champs || champsRest !== restReady) {
     champs = new Map();
@@ -1097,10 +1132,11 @@ function render() {
   else if (view.v === "judges") withRest(m, renderJudges);
   else if (view.v === "judge") withRest(m, mm => renderJudge(mm, view.id));
   else if (view.v === "balance") withRest(m, renderBalance);
+  else if (view.v === "integrity") renderIntegrity(m);
   else renderBoard(m);
 }
 const ROUTES = { board: "/", tours: "/tournaments", insts: "/institutions",
-                 judges: "/judges", balance: "/motions" };
+                 judges: "/judges", balance: "/motions", integrity: "/tournament-integrity" };
 const slug = s => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 function pathFor(v, id) {
   if (v === "player") return `/debaters/${id}/${slug(P[id][0])}`;
@@ -1135,6 +1171,7 @@ function parsePath(p) {
   if (s[0] === "judges") { if (!s[1]) return { v: "judges" };
     const i = +s[1]; return JN[i] ? { v: "judge", id: i } : { v: "judges" }; }
   if (s[0] === "motions") return { v: "balance" };
+  if (s[0] === "tournament-integrity") return { v: "integrity" };
   return { v: "board" };
 }
 function titleFor(v, id) {
@@ -1142,7 +1179,7 @@ function titleFor(v, id) {
        : v === "judge" ? JN[id]
        : v === "inst" ? (buildInsts().find(x => x.key === id) || { name: id }).name
        : { tours: "Tournaments", insts: "Institutions", judges: "Judges",
-           balance: "Motions" }[v] || "BP Debate Directory";
+           balance: "Motions", integrity: "Tournament Integrity" }[v] || "BP Debate Directory";
 }
 
 function crumbName(f) {

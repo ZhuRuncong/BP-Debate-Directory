@@ -6,15 +6,16 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import db, form, pipeline
+from . import db, form, pipeline, tabbycat
 from .idnorm import canon
-from .rooms import TEAM_RENAME
-from .settings import FORM_POLL_MINUTES
+from .rooms import TEAM_RENAME, is_anon
+from .settings import FORM_POLL_MINUTES, ONGOING_POLL_MINUTES
 
 RUN_OPTIONS = ("force", "fit_only", "skip_ingest", "publish_anyway", "refit", "requests")
 LOG_TAIL = 200
 KINDS = ("player", "institution")
 HIDDEN_EMPTY = {"players": [], "institutions": []}
+ONGOING = "ongoing_watches"
 
 
 def utcnow():
@@ -24,6 +25,28 @@ def utcnow():
 def norm_key(kind: str, value: str) -> str:
     """Match how the pipeline keys each kind: canon() for people, lowercase for institutions."""
     return canon(value) if kind == "player" else (value or "").strip().lower()
+
+
+def normalize_tournament_url(url: str) -> str:
+    """Canonical tab root (scheme://host/slug) so any page of the same tab matches."""
+    return tabbycat.split_url(url)[2]
+
+
+def fetch_live_tournament(url: str) -> dict:
+    """Pull a tab's current state straight from its own site, bypassing the sheet/DB."""
+    base, slug, root = tabbycat.split_url(url)
+    name = root
+    try:
+        info = tabbycat.get_json(f"{base}/api/v1/tournaments/{slug}")
+        name = info.get("name") or name
+    except Exception:
+        pass
+    return tabbycat.fetch_tournament(-1, name, url)
+
+
+def tournament_is_complete(rec: dict) -> bool:
+    """True once every round Tabbycat currently lists has posted results."""
+    return bool(rec.get("rounds")) and all(rd.get("rooms") for rd in rec["rounds"])
 
 
 class Job:
@@ -449,17 +472,128 @@ class App:
                      "applies_at": "next rebuild"}
 
 
+    def _watch_ongoing(self, url: str):
+        """Shared core for the admin and public entry points.
+
+        Returns one of:
+          ("not_found", None, rec)   - couldn't reach it / no rounds found
+          ("complete", None, rec)    - every round already has results
+          ("watching", root, players) - now hidden until it wraps up
+        """
+        try:
+            rec = fetch_live_tournament(url)
+        except Exception as e:
+            return "not_found", None, {"errors": [str(e)]}
+        if not rec.get("rounds"):
+            return "not_found", None, rec
+        if tournament_is_complete(rec):
+            return "complete", None, rec
+        root = normalize_tournament_url(url)
+        players = sorted({canon(p) for team in rec["teams"].values() for p in team if not is_anon(p)})
+        conn = self.connect()
+        try:
+            hidden = db.get_artifact(conn, "hidden", dict(HIDDEN_EMPTY))
+            hidden.setdefault("players", [])
+            hidden.setdefault("institutions", [])
+            hidden["players"] = sorted(set(hidden["players"]) | set(players))
+            db.set_artifact(conn, "hidden", hidden)
+            watches = db.get_artifact(conn, ONGOING, {})
+            watches[root] = {"url": url, "name": rec.get("name") or root,
+                             "players": players, "added": utcnow()}
+            db.set_artifact(conn, ONGOING, watches)
+        finally:
+            conn.close()
+        return "watching", root, players
+
+    def watch_ongoing(self, body: dict):
+        """Fetch a tab live; while any of its rounds are still unposted, hide its whole roster."""
+        url = body.get("url")
+        if not isinstance(url, str) or not url.strip():
+            return 400, {"error": "url must be a non-empty string"}
+        status, root, info = self._watch_ongoing(url.strip())
+        if status == "not_found":
+            return 502, {"error": "no rounds found; %s" % "; ".join(info.get("errors") or ["unknown error"])}
+        if status == "complete":
+            return 200, {"root": normalize_tournament_url(url.strip()), "ongoing": False, "hidden": [],
+                        "note": "all rounds already have results; nothing hidden"}
+        return 200, {"root": root, "ongoing": True, "hidden": info, "applies_at": "next rebuild"}
+
+    def report_ongoing(self, body: dict):
+        """Public, unauthenticated: anyone can flag a currently-running tab to be hidden until it wraps up."""
+        url = body.get("url")
+        if not isinstance(url, str) or not url.strip():
+            return 400, {"status": "error", "message": "enter a tournament URL"}
+        status, _root, _info = self._watch_ongoing(url.strip())
+        return 200, {
+            "not_found": {"status": "not_found", "message": "could not find that tournament"},
+            "complete": {"status": "not_ongoing", "message": "that tournament is not ongoing"},
+            "watching": {"status": "success", "message": "hidden until the tournament finishes"},
+        }[status]
+
+    def list_ongoing(self):
+        conn = self.connect()
+        try:
+            return 200, db.get_artifact(conn, ONGOING, {})
+        finally:
+            conn.close()
+
+    def sweep_ongoing(self, log=print) -> dict:
+        """Re-check every watched tab; unhide its roster once all its rounds have posted."""
+        conn = self.connect()
+        try:
+            watches = db.get_artifact(conn, ONGOING, {})
+            n_checked, completed = len(watches), []
+            if not watches:
+                return {"checked": 0, "completed": completed}
+            hidden = db.get_artifact(conn, "hidden", dict(HIDDEN_EMPTY))
+            hidden.setdefault("players", [])
+            for root, info in list(watches.items()):
+                try:
+                    rec = fetch_live_tournament(info["url"])
+                except Exception as e:
+                    log("ongoing check failed for %s: %s" % (root, e))
+                    continue
+                if tournament_is_complete(rec):
+                    hidden["players"] = sorted(set(hidden["players"]) - set(info["players"]))
+                    del watches[root]
+                    completed.append(root)
+                    log("ongoing tournament complete, unhidden: %s" % info.get("name", root))
+            if completed:
+                db.set_artifact(conn, "hidden", hidden)
+                db.set_artifact(conn, ONGOING, watches)
+        finally:
+            conn.close()
+        return {"checked": n_checked, "completed": completed}
+
+
+PUBLIC_PATHS = ("/ongoing/report",)  # no bearer token needed; reachable straight from the site
+
+
 class Handler(BaseHTTPRequestHandler):
     app = None
     token = None
 
-    def send_json(self, code: int, obj: dict):
+    def send_json(self, code: int, obj: dict, cors: bool = False):
         body = json.dumps(obj).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        if cors:
+            self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
+
+    def do_OPTIONS(self):
+        if self.path not in PUBLIC_PATHS:
+            self.send_response(404)
+            self.end_headers()
+            return
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "POST")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def authorized(self) -> bool:
         got = self.headers.get("Authorization") or ""
@@ -492,9 +626,17 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(*self.app.list_requests())
         if self.path == "/roster-fixes":
             return self.send_json(*self.app.list_roster_fixes())
+        if self.path == "/ongoing":
+            return self.send_json(*self.app.list_ongoing())
         return self.send_json(404, {"error": "not found"})
 
     def do_POST(self):
+        if self.path in PUBLIC_PATHS:
+            try:
+                body = self.read_body()
+            except ValueError:
+                return self.send_json(400, {"error": "invalid JSON body"}, cors=True)
+            return self.send_json(*self.app.report_ongoing(body), cors=True)
         if not self.authorized():
             return self.send_json(401, {"error": "unauthorized"})
         try:
@@ -527,6 +669,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(*self.app.set_roster_fix(body, True))
         if self.path == "/roster-fix/remove":
             return self.send_json(*self.app.set_roster_fix(body, False))
+        if self.path == "/ongoing/watch":
+            return self.send_json(*self.app.watch_ongoing(body))
+        if self.path == "/ongoing/sweep":
+            return self.send_json(200, self.app.sweep_ongoing())
         return self.send_json(404, {"error": "not found"})
 
     def log_message(self, fmt, *args):
@@ -544,6 +690,15 @@ def poll_form(app, minutes):
         time.sleep(minutes * 60)
 
 
+def poll_ongoing(app, minutes):
+    while True:
+        try:
+            app.sweep_ongoing()
+        except Exception as e:
+            print("ongoing poll failed: %s: %s" % (type(e).__name__, e), flush=True)
+        time.sleep(minutes * 60)
+
+
 def main():
     token = os.environ.get("ADMIN_TOKEN")
     if not token:
@@ -556,6 +711,8 @@ def main():
         threading.Thread(target=poll_form, args=(Handler.app, FORM_POLL_MINUTES), daemon=True).start()
     else:
         print("form polling off", flush=True)
+    if ONGOING_POLL_MINUTES > 0:
+        threading.Thread(target=poll_ongoing, args=(Handler.app, ONGOING_POLL_MINUTES), daemon=True).start()
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     print("admin api listening on :%d" % port, flush=True)
     server.serve_forever()
