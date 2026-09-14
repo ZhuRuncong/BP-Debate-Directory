@@ -928,7 +928,7 @@ function renderBalance(m) {
 function renderIntegrity(m) {
   m.innerHTML = `<div class="wrap"><div class="card">
     <h3>Tournament Integrity</h3>
-    <p>Hide participants at ongoing tournaments to mitigate the risk of ratings based clout calling</p>
+    <p>Hide participants at ongoing tournaments to ensure tournament integrity</p>
     <div class="f"><label for="ogUrl">Tournament URL</label>
       <input type="text" id="ogUrl" size="40" placeholder="https://"></div>
     <div class="f"><label>&nbsp;</label><button class="btn" id="ogSubmit">Submit</button></div>
