@@ -105,9 +105,7 @@ svg .ax{fill:#333;font-size:10px}
   header h1{order:1}
   .grow{display:none}
   #gsearch{order:2;flex:1 1 160px;min-width:130px;width:auto}
-  nav{order:3;width:100%;flex-wrap:nowrap;overflow-x:auto;gap:1px;
-      scrollbar-width:none;-webkit-overflow-scrolling:touch}
-  nav::-webkit-scrollbar{display:none}
+  nav{order:3;width:100%;flex-wrap:wrap;gap:1px 4px}
   nav button,nav a{flex:0 0 auto}
 }
 @media (max-width:700px){
