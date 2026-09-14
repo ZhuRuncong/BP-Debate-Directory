@@ -115,6 +115,13 @@ def test_merges_reach_score_only_games():
         "Fixture Open 2024", "Cape Town WUDC 2019"}
 
 
+def test_weighted_recent_speaks_normalizes_for_short_careers():
+    assert payload.weighted_recent_speaks([]) is None
+    assert payload.weighted_recent_speaks([80]) == 80.0
+    assert payload.weighted_recent_speaks([80, 70]) == 75.56
+    assert payload.weighted_recent_speaks([80, 70, 70]) == 74.1
+
+
 def test_a_hidden_institution_is_never_anyones_primary():
     # four people seen twice at Harvard, then twice under a junk "Double" team prefix
     w = payload.World()

@@ -805,6 +805,18 @@ def regional_teams(w: World, pl: list, teams_of: dict, insts: dict) -> dict:
     return {i: [rename(nm, e[0]) for nm, e in zip(teams_of[i], w.careers[i], strict=True)] for i in pl}
 
 
+def weighted_recent_speaks(speaks_desc: list) -> float | None:
+    if not speaks_desc:
+        return None
+    remaining, total, wsum = 1.0, 0.0, 0.0
+    for sc in speaks_desc:
+        wt = remaining * 0.2
+        total += wt * sc
+        wsum += wt
+        remaining -= wt
+    return round(total / wsum, 2)
+
+
 def build_board(w: World, n_players: int, hidden: set):
     pl = sorted(w.careers)
     teams_of = {i: [e[1] or "" for e in w.careers[i]] for i in pl}
@@ -871,7 +883,7 @@ def build_board(w: World, n_players: int, hidden: set):
         primary = next((shown.get(k) for k in reversed(it.get("at") or [])
                         if k is not None and k not in hidden), None)
         board_rows.append([len(car), nr,
-                           round(sum(rec_sp) / len(rec_sp), 2) if rec_sp else None,
+                           weighted_recent_speaks(list(reversed(rec_sp))),
                            round(pts / ptsr, 3) if ptsr else None,
                            wins, finals, breaks, obreaks,
                            primary, own,
