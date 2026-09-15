@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from . import db, form, pipeline, tabbycat
 from .idnorm import canon
 from .rooms import TEAM_RENAME, is_anon
-from .settings import FORM_POLL_MINUTES, ONGOING_POLL_MINUTES
+from .settings import FORM_POLL_MINUTES, INGEST_POLL_MINUTES, ONGOING_POLL_MINUTES
 
 RUN_OPTIONS = ("force", "fit_only", "skip_ingest", "publish_anyway", "refit", "requests")
 LOG_TAIL = 200
@@ -725,6 +725,20 @@ def poll_ongoing(app, minutes):
         time.sleep(minutes * 60)
 
 
+def poll_ingest(app, minutes):
+    """Sync the sheet and ingest any newly-due tournaments; rebuilds only if something's new."""
+    while True:
+        try:
+            code, out = app.trigger_run({})
+            if code == 202:
+                print("ingest poll: sheet sync + ingest run started", flush=True)
+            elif code != 409:  # 409 = a run is already in progress; just retry next cycle
+                print("ingest poll: unexpected response %d: %s" % (code, out), flush=True)
+        except Exception as e:
+            print("ingest poll failed: %s: %s" % (type(e).__name__, e), flush=True)
+        time.sleep(minutes * 60)
+
+
 def main():
     token = os.environ.get("ADMIN_TOKEN")
     if not token:
@@ -739,6 +753,8 @@ def main():
         print("form polling off", flush=True)
     if ONGOING_POLL_MINUTES > 0:
         threading.Thread(target=poll_ongoing, args=(Handler.app, ONGOING_POLL_MINUTES), daemon=True).start()
+    if INGEST_POLL_MINUTES > 0:
+        threading.Thread(target=poll_ingest, args=(Handler.app, INGEST_POLL_MINUTES), daemon=True).start()
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     print("admin api listening on :%d" % port, flush=True)
     server.serve_forever()
