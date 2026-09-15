@@ -250,10 +250,9 @@ def merge_keys(site: Site, keys: list) -> dict:
     # The full name used at the most tournaments survives; "Ojas" + "Ojas Date" shows as Ojas Date.
     target = max(keys, key=lambda k: (len(fold(k).split()) > 1, len(site.tours[k]), -keys.index(k)))
     words = set(fold(target).split())
+    # A name sharing no token with the others (a transliteration, a maiden name) is usually still
+    # the same person; merge it in anyway, just flagged for a human to double-check.
     strangers = [k for k in keys if not words & set(fold(k).split())]
-    if strangers:
-        return {"status": "review", "note": "%s shares no name with %s"
-                % (", ".join(strangers), target)}
     moved = {k: target for k in keys if k != target}
     for variant, root in list(site.merges.items()):
         if root in moved:
@@ -261,6 +260,9 @@ def merge_keys(site: Site, keys: list) -> dict:
     site.merges.update(moved)
     for k in moved:
         site.tours[target] |= site.tours.pop(k, set())
+    if strangers:
+        return {"status": "review", "merged": moved,
+                "note": "%s shares no name with %s" % (", ".join(strangers), target)}
     return {"status": "done", "merged": moved}
 
 

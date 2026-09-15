@@ -157,13 +157,19 @@ def test_merge_holds_back_on_evidence_of_two_people():
                  row("3", "Merge", "Ann Alpha", "Ann Cape"),
                  row("4", "Merge", "Ann Cape", "Edward Delta Cape"))
     assert form.apply(conn, reqs, log=QUIET) == 1
-    notes = [outcome(conn, r).get("note") for r in reqs]
+    outcomes = [outcome(conn, r) for r in reqs]
+    notes = [o.get("note") for o in outcomes]
     assert notes[0] == "ann alpha and bob alpha were both at Fixture Open 2024"
+    assert "merged" not in outcomes[0]
+    # a name sharing no token with the target still merges, just flagged for review
     assert notes[1] == "pat cape shares no name with ann alpha"
-    assert outcome(conn, reqs[2])["merged"] == {"ann cape": "ann alpha"}
-    # the merge above already gave Ann Alpha the Cape Town record
-    assert notes[3] == "ann alpha and edward delta cape were both at Cape Town WUDC 2019"
-    assert conn.artifacts["id_merges"]["ann cape"] == "ann alpha"
+    assert outcomes[1]["merged"] == {"pat cape": "ann alpha"}
+    # the merge above now gives Ann Alpha the Cape Town record too, so Ann Cape
+    # conflicts with her the same way Pat Cape's own history would have
+    assert notes[2] == "ann alpha and ann cape were both at Cape Town WUDC 2019"
+    assert "merged" not in outcomes[2]
+    assert notes[3] == "ann cape and edward delta cape were both at Cape Town WUDC 2019"
+    assert conn.artifacts["id_merges"] == {"ned delta": "edward delta", "pat cape": "ann alpha"}
 
 
 def test_completed_requests_are_ticked_once_live(monkeypatch):
