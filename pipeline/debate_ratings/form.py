@@ -233,26 +233,29 @@ def merge(site: Site, names: list) -> dict:
 
 
 def merge_keys(site: Site, keys: list) -> dict:
+    """Merge every key into one identity. Anything that looks like it might actually be
+    two different people (differently accented, both at the same tournament, sharing no
+    name with the target) merges anyway, but comes back flagged for a human to double-check."""
     if not keys:
         return {"status": "review", "note": "no name matched a profile"}
     if len(keys) < 2:
         return {"status": "done", "merged": {}, "note": "already one profile"}
+    notes = []
     # "Viet" may join "Việt", but "Việt" and "Viết" are different names
     for a, b in itertools.combinations(keys, 2):
         if fold(a) == fold(b) and not compatible(a, b):
-            return {"status": "review", "note": "%s and %s are differently accented" % (a, b)}
+            notes.append("%s and %s are differently accented" % (a, b))
     for a, b in itertools.combinations(keys, 2):
         both = site.tours[a] & site.tours[b]
         if both:
             # one person is never two entries at the same tournament
-            return {"status": "review", "note": "%s and %s were both at %s"
-                    % (a, b, site.tour_names[min(both)])}
+            notes.append("%s and %s were both at %s" % (a, b, site.tour_names[min(both)]))
     # The full name used at the most tournaments survives; "Ojas" + "Ojas Date" shows as Ojas Date.
     target = max(keys, key=lambda k: (len(fold(k).split()) > 1, len(site.tours[k]), -keys.index(k)))
     words = set(fold(target).split())
-    # A name sharing no token with the others (a transliteration, a maiden name) is usually still
-    # the same person; merge it in anyway, just flagged for a human to double-check.
     strangers = [k for k in keys if not words & set(fold(k).split())]
+    if strangers:
+        notes.append("%s shares no name with %s" % (", ".join(strangers), target))
     moved = {k: target for k in keys if k != target}
     for variant, root in list(site.merges.items()):
         if root in moved:
@@ -260,9 +263,8 @@ def merge_keys(site: Site, keys: list) -> dict:
     site.merges.update(moved)
     for k in moved:
         site.tours[target] |= site.tours.pop(k, set())
-    if strangers:
-        return {"status": "review", "merged": moved,
-                "note": "%s shares no name with %s" % (", ".join(strangers), target)}
+    if notes:
+        return {"status": "review", "merged": moved, "note": "; ".join(notes)}
     return {"status": "done", "merged": moved}
 
 

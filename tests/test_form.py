@@ -150,26 +150,31 @@ def test_merge_never_keeps_a_bare_first_name():
     assert outcome(conn, req)["merged"] == {"ann": "ann cape"}
 
 
-def test_merge_holds_back_on_evidence_of_two_people():
+def test_merge_flags_evidence_of_two_people_but_still_merges():
     conn = published()
     reqs = sheet(row("1", "Merge", "Ann Alpha", "Bob Alpha"),
                  row("2", "Merge", "Ann Alpha", "Pat Cape"),
                  row("3", "Merge", "Ann Alpha", "Ann Cape"),
                  row("4", "Merge", "Ann Cape", "Edward Delta Cape"))
-    assert form.apply(conn, reqs, log=QUIET) == 1
+    assert form.apply(conn, reqs, log=QUIET) == 4  # none of these are live yet
     outcomes = [outcome(conn, r) for r in reqs]
     notes = [o.get("note") for o in outcomes]
+    # both-at-the-same-tournament and shares-no-name are flagged for review, not blocked
     assert notes[0] == "ann alpha and bob alpha were both at Fixture Open 2024"
-    assert "merged" not in outcomes[0]
-    # a name sharing no token with the target still merges, just flagged for review
+    assert outcomes[0]["merged"] == {"bob alpha": "ann alpha"}
     assert notes[1] == "pat cape shares no name with ann alpha"
     assert outcomes[1]["merged"] == {"pat cape": "ann alpha"}
-    # the merge above now gives Ann Alpha the Cape Town record too, so Ann Cape
-    # conflicts with her the same way Pat Cape's own history would have
+    # the merges above now give Ann Alpha the Cape Town record too, so every
+    # later request against her also gets flagged, but still goes through
     assert notes[2] == "ann alpha and ann cape were both at Cape Town WUDC 2019"
-    assert "merged" not in outcomes[2]
-    assert notes[3] == "ann cape and edward delta cape were both at Cape Town WUDC 2019"
-    assert conn.artifacts["id_merges"] == {"ned delta": "edward delta", "pat cape": "ann alpha"}
+    assert outcomes[2]["merged"] == {"ann cape": "ann alpha"}
+    assert notes[3] == ("ann alpha and edward delta cape were both at Cape Town WUDC 2019; "
+                        "edward delta cape shares no name with ann alpha")
+    assert outcomes[3]["merged"] == {"edward delta cape": "ann alpha"}
+    assert all(o["status"] == "review" for o in outcomes)
+    assert conn.artifacts["id_merges"] == {
+        "ned delta": "edward delta", "bob alpha": "ann alpha", "pat cape": "ann alpha",
+        "ann cape": "ann alpha", "edward delta cape": "ann alpha"}
 
 
 def test_completed_requests_are_ticked_once_live(monkeypatch):
@@ -215,7 +220,7 @@ def test_a_failed_tick_is_retried_without_rebuilding(monkeypatch):
     assert (res["requests"], res["rebuilt"], s.ticked) == (0, False, ["G2"])
 
 
-def test_merge_keeps_differently_accented_names_apart():
+def test_merge_flags_but_applies_differently_accented_names():
     conn = world.make_conn()
     conn.extra_games += [
         {"source": "sheets", "row": 90019, "seq": 2, "t": world.day("2018-12-28"), "obs": "O",
@@ -224,6 +229,8 @@ def test_merge_keeps_differently_accented_names_apart():
          "c": [["zoè cape"], ["fay beta"]], "r": [75.0, 74.0], "sc": 2.0}]
     pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
     [req] = sheet(row("1", "Merge", "Zoë Cape", "Zoè Cape"))
-    assert form.apply(conn, [req], log=QUIET) == 0
-    note = outcome(conn, req)["note"]
+    assert form.apply(conn, [req], log=QUIET) == 1  # not live yet, but applied
+    out = outcome(conn, req)
+    assert out["status"] == "review" and out["merged"] == {"zoë cape": "zoè cape"}
+    note = out["note"]
     assert note.endswith("are differently accented") and "zoë cape" in note and "zoè cape" in note
