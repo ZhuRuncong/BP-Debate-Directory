@@ -329,6 +329,10 @@ class TabTournament:
             ents.append((tk, x.get("team"), roster, x.get("sort"),
                          side_code(x.get("side"), len(rm))))
         best = max(e[3] for e in ents)
+        # "sort" is usually already the tight sequence 1..N (rank, high = best), but some
+        # tabs report raw points on their own scale; rank_of derives 0-indexed rank-from-worst
+        # (BP points: 3,2,1,0) from relative order alone, so it's a no-op on the normal case.
+        rank_of = {v: i for i, v in enumerate(sorted({e[3] for e in ents}))}
         room_acc = []
         for tk, traw, roster, sort, side in ents:
             pids = [self.w.pid.id(self.inp.pkey(p, self.row, tk)) for p in roster if not is_anon(p)]
@@ -340,7 +344,7 @@ class TabTournament:
             if not is_prelim:
                 self.rp.setdefault(ridx, set()).update(pids)
             if is_prelim:
-                res = sort - 1
+                res = rank_of[sort]
                 self.tpts[tk] += res
                 self.tspk.setdefault(tk, 0)
             else:

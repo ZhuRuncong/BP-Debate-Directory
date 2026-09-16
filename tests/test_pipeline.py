@@ -142,6 +142,23 @@ def test_id_split_keeps_two_identities_coexisting_by_display_name():
 
 
 
+def test_room_points_derive_from_relative_rank_not_raw_sort_scale():
+    # Some tabs report each team's own points/place on a non-standard scale
+    # instead of the usual tight 1..4 sequence; points should still come out
+    # as the standard BP 3/2/1/0 by rank, not the raw (possibly huge) values.
+    conn = world.make_conn()
+    room1 = conn.raw_tabs[10]["rounds"][0]["rooms"][0]
+    for entry, sort in zip(room1, [9, 6, 5, 2], strict=True):
+        entry["sort"] = sort
+    pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
+    data = json.loads(gzip.decompress(conn.payloads[("data", "gz")][1]))
+    rest = json.loads(gzip.decompress(conn.payloads[("rest", "gz")][1]))
+    names = [p[0] for p in data["players"]]
+    ann = str(names.index("Ann Alpha"))  # Alpha A / OG, the room's best raw sort (9)
+    res_by_round = {e[0]: e[1] for e in rest["careers"][ann][0][3]}
+    assert res_by_round[1] == 3  # Round 1 (index 0 is the fixture's separate scoreonly Trial); still full BP points
+
+
 def test_weighted_recent_speaks_normalizes_for_short_careers():
     assert payload.weighted_recent_speaks([]) is None
     assert payload.weighted_recent_speaks([80]) == 80.0
