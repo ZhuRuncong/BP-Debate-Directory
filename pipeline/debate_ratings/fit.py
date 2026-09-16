@@ -55,7 +55,8 @@ def fit(conn, motions: bool, mm: dict, log=print) -> Tab:
     """Fit the skill model over all rooms and extra games; motions toggles side-bias terms."""
     tab = Tab(mu=0.0, sigma=1.2, beta=1.0, gamma=0.024,
               between="ordinal", within="gap",
-              motions=motions, motion_sigma=0.28, period="date")
+              motions=motions, motion_sigma=0.28, period="date",
+              revert=False)  # uncertainty grows over an absence; skill itself is never pulled to the mean
     prior_mus = priors.quality_prior_mus(conn, QUALITY_PRIOR_STRENGTH)
     if prior_mus:
         tab.enroll(*(Speaker(name, mu=mu) for name, mu in sorted(prior_mus.items())))
