@@ -72,6 +72,19 @@ def test_parse_results_page_counts_drops():
     assert stats["result_rows_dropped"] == 1
 
 
+def test_parse_results_page_skips_a_code_name_line_for_the_real_roster():
+    # Some tabs show an anonymized "Code name: N" popover line ahead of the
+    # real roster line instead of in place of it.
+    table = {"head": [{"key": "team"}, {"key": "result"}],
+             "data": [[{"text": "Alpha A", "popover": {"content": [
+                 {"text": "Code name: <strong>12</strong>"},
+                 {"text": "Ann Alpha, Bob Alpha"},
+                 {"text": "View Alpha A's Record", "link": "/x"},
+             ]}}, {"sort": 1, "text": "1st"}]]}
+    out = parse_results_page(page_with([table]))
+    assert out[0][0]["roster"] == "Ann Alpha, Bob Alpha"
+
+
 def test_parse_speaker_tab_scores_and_drops():
     table = {"head": [{"key": "name"}, {"key": "team"}, {"title": "R1"}, {"title": "R2"}],
              "data": [[{"text": "Ann One"}, {"text": "Alpha A"},

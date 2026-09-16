@@ -96,8 +96,15 @@ def parse_results_page(page, stats=None):
                 roster = None
                 if isinstance(row[c_team], dict):
                     cont = ((row[c_team].get("popover") or {}).get("content") or [])
-                    if cont and "link" not in cont[0]:
-                        roster = strip_html(cont[0].get("text", ""))
+                    for c in cont:
+                        if "link" in c:
+                            continue
+                        text = strip_html(c.get("text", ""))
+                        # some tabs show a "Code name: N" line ahead of the real roster
+                        if text.lower().startswith("code name"):
+                            continue
+                        roster = text
+                        break
                 mates = None
                 for c in ((rc.get("popover") or {}).get("content") or []):
                     t = str(c.get("text") or "")
