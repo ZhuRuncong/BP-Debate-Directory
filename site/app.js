@@ -46,11 +46,10 @@ let sortKey = "val", sortDir = -1, highlight = -1;
 let view = { v: "board" };
 let tourQ = "", tourSort = { k: "d", dir: -1 }, champs = null, champsRest = false;
 const INST_BS_DEFAULT = 1600;
-const BAL_BS_DEFAULT = 1600;
 let instQ = "", instMinBS = INST_BS_DEFAULT, instSort = { k: "wins", dir: -1 };
 const INST_MINT_DEFAULT = 3;
 let instMinT = INST_MINT_DEFAULT, instFrom = "";
-let balMinRooms = 15, balMinBS = BAL_BS_DEFAULT, balTags = null,
+let balMinRooms = 0, balMinBS = null, balTags = null,
     balSort = { k: "bal", dir: -1 }, balMoQ = "", balTourQ = "";
 // semantic-only hits need this cosine to show; keyword matches always show, boosted in the ranking
 const SEM_MIN = 0.42, LEX_BOOST = 0.2, SEM_DEBOUNCE = 300;
@@ -912,7 +911,7 @@ function renderBalance(m) {
       <div class="f"><label for="btq">Search tournament</label>
         <input type="text" id="btq" size="20" value="${esc(balTourQ)}"></div>
       <div class="f"><label for="brm">Min rooms</label>
-        <input type="number" id="brm" min="1" step="1" style="width:64px" value="${balMinRooms}"></div>
+        <input type="number" id="brm" min="1" step="1" style="width:64px" value="${balMinRooms || ""}"></div>
       <div class="f"><label for="bbs">Min tournament break strength</label>
         <input type="number" id="bbs" step="50" style="width:90px" value="${balMinBS ?? ""}"></div>
       <div class="f"><label>&nbsp;</label><button class="btn" id="breset">reset</button></div>
@@ -944,7 +943,7 @@ function renderBalance(m) {
     fillBalance();
   };
   $("breset").onclick = () => {
-    balMinRooms = 15; balMinBS = BAL_BS_DEFAULT; balTags = new Set(D.tags.map((_, i) => i));
+    balMinRooms = 0; balMinBS = null; balTags = new Set(D.tags.map((_, i) => i));
     balMoQ = ""; balTourQ = "";
     semSearch();
     if (balSort.k === "rel") balSort = { k: "bal", dir: -1 };
@@ -1054,7 +1053,7 @@ function breakStrength(t) {
   if (size == null && str == null) return "";
   return `<div class="card"><h3>Open break</h3>
     <div class="scrollx"><table class="d" style="width:auto"><thead><tr>
-      <th class="n">Teams</th><th class="n">Break strength</th>
+      <th class="n">Break size</th><th class="n">Break strength</th>
     </tr></thead><tbody><tr>
       <td class="n">${size ?? "—"}</td><td class="n">${k1(str)}</td>
     </tr></tbody></table></div></div>`;
