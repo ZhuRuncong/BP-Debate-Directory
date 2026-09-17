@@ -275,6 +275,7 @@ function exportCSV() {
 const SIZE_W = 150, WIN_BONUS = 100, ROUND_W = 60, ROUND_BASE = 5, ROUND_CAP = 10;
 
 const roomsOf = t => t.field ? Math.ceil(t.field / 8) : 0;
+const teamsOf = t => t.field ? Math.ceil(t.field / 2) : 0;
 const prelimsOf = t => t.rounds.filter(r => r[1] === "P").length;
 function accolades(d, car) {
   const out = [];
@@ -1062,7 +1063,7 @@ function renderTour(m, ti) {
     ${crumb("tours", "tournaments")}
     <div class="phead"><div>
       <h2>${esc(t.n)}</h2>
-      <div class="sub">${esc(t.d)} &middot; ${roomsOf(t)} rooms &middot;
+      <div class="sub">${esc(t.d)} &middot; ${teamsOf(t)} teams &middot;
         ${t.rounds.filter(r => r[1] === "P").length} prelim rounds${t.u ? ` &middot; <a href="${esc(t.u)}" target="_blank" rel="noopener">tab site ↗</a>` : ""}${
         t.partial ? " &middot; <i>partially reconstructed</i>" : ""}</div>
     </div></div>
