@@ -1,7 +1,11 @@
+# syntax=docker/dockerfile:1
 FROM python:3.12-slim AS build
-RUN apt-get update && apt-get install -y --no-install-recommends g++ git && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends g++ && rm -rf /var/lib/apt/lists/*
 ARG DEBATERSKILL_REF=main
-RUN pip wheel --no-deps -w /wheels "debaterskill @ git+https://github.com/ZhuRuncong/debaterskill@${DEBATERSKILL_REF}"
+# A git source is cached by the commit the ref resolves to. A pip install of "@main" is cached by
+# its unchanging command text, which let a build silently reuse a wheel of an older main.
+ADD https://github.com/ZhuRuncong/debaterskill.git#${DEBATERSKILL_REF} /src/debaterskill
+RUN pip wheel --no-deps -w /wheels /src/debaterskill
 
 FROM python:3.12-slim
 WORKDIR /app
