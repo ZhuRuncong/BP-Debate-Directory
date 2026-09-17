@@ -1,7 +1,7 @@
 import datetime
 import json
 
-from . import db, fit, form, ingest, judges, payload, rooms, tagger
+from . import db, fit, form, ingest, judges, motion_search, payload, rooms, tagger
 from .settings import MAX_ROOM_DROP, MAX_SPEAKER_DROP
 
 
@@ -83,6 +83,7 @@ def rebuild(conn, log=log, publish_anyway=False, refit=False):
                          "room_stats": stats})))
     conn.commit()
     log("payload stored at %s" % built_at.isoformat())
+    motion_search.update_index(conn, rest["balance"], log=log)
     return rows_b
 
 

@@ -112,6 +112,13 @@ def get_model_files(conn, model):
         return {name: bytes(body) for name, body in cur.fetchall()}
 
 
+def get_model_file(conn, model, name):
+    with conn.cursor() as cur:
+        cur.execute("SELECT body FROM model_files WHERE model = %s AND name = %s", (model, name))
+        row = cur.fetchone()
+    return bytes(row[0]) if row else None
+
+
 def iter_rooms(conn):
     with conn.cursor(name="rooms_cur") as cur:
         cur.itersize = 5000

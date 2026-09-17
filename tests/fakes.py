@@ -131,6 +131,9 @@ class FakeConn:
             return [(last[1], last[2], json.loads(last[3]))]
         if "SELECT name, body FROM model_files" in q:
             return [(n, b) for (m, n), b in self.model_files.items() if m == params[0]]
+        if "SELECT body FROM model_files" in q:
+            body = self.model_files.get(tuple(params))
+            return [(body,)] if body is not None else []
         if "SELECT row_id, name FROM tournaments WHERE row_id = ANY" in q:
             return [(k, self.tournaments[k].get("name")) for k in sorted(self.tournaments)
                     if k in (params[0] or [])]

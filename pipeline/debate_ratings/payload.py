@@ -684,9 +684,10 @@ def build_balance(w: World, inp: Inputs, bias_by_round: dict, by_text: dict,
     return balance
 
 
-def build_neighbours(balance: list, neighbors_raw: dict) -> list:
+def build_neighbours(balance: list, neighbors_raw: dict) -> tuple[list, list]:
+    """Number each distinct motion (appended to its balance rows); returns neighbours and ids by number."""
     if not balance:
-        return []
+        return [], []
     order, mi_of = [], {}
     for row in balance:
         k = mid(row[2])
@@ -699,7 +700,7 @@ def build_neighbours(balance: list, neighbors_raw: dict) -> list:
         for k in order:
             out.append([[mi_of[j], int(round(s * 1000))]
                         for j, s in (neighbors_raw.get(k) or []) if j in mi_of])
-    return out
+    return out, order
 
 
 def attach_expected_points(w: World, inp: Inputs, by_text: dict, at: dict, log) -> None:
@@ -945,7 +946,7 @@ def build(conn, base_tab, abl_tab, occs, texts, built_date, log=print):
     attach_break_strength(w, at, log)
     tag_list = attach_tags(w.tours, inp.tagged)
     balance = build_balance(w, inp, bias_by_round, by_text, tag_list, log)
-    neighbours = build_neighbours(balance, inp.neighbors_raw)
+    neighbours, mids = build_neighbours(balance, inp.neighbors_raw)
     attach_expected_points(w, inp, by_text, at, log)
     jn, jc, jlink = build_judges(w, inp, at)
     gone = {i for i, k in enumerate(w.pid.keys) if k in inp.hidden_players}
@@ -977,6 +978,7 @@ def build(conn, base_tab, abl_tab, occs, texts, built_date, log=print):
             "curves": {str(i): v for i, v in sorted(cv.items())},
             "balance": balance,
             "nbr": neighbours,
+            "mids": mids,
             "jc": jc}
     log("tournaments %d  players %d  careers %d  curves %d"
         % (len(w.tours), len(players), len(w.careers), len(cv)))

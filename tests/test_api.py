@@ -418,6 +418,28 @@ def test_ongoing_report_is_public_with_cors_and_needs_no_token(monkeypatch):
         srv.shutdown()
 
 
+def test_motion_search_is_public_with_cors(monkeypatch):
+    app, conn = make_app()
+    hits = [["662901dc33", 0.81]]
+    monkeypatch.setattr(app.searcher, "search", lambda q: hits if q == "carbon tax" else None)
+    api.Handler.app = app
+    api.Handler.token = "sekrit"
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), api.Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = "http://127.0.0.1:%d" % srv.server_address[1]
+    try:
+        r = httpx.get(base + "/motions/search", params={"q": " carbon tax "})
+        assert r.status_code == 200
+        assert r.headers["Access-Control-Allow-Origin"] == "*"
+        assert r.json() == {"hits": hits}
+        assert httpx.get(base + "/motions/search", params={"q": " "}).status_code == 400
+        assert httpx.get(base + "/motions/search", params={"q": "x" * 201}).status_code == 400
+        assert httpx.get(base + "/motions/search", params={"q": "not indexed yet"}).status_code == 503
+        assert httpx.get(base + "/status").status_code == 401  # admin routes still gated
+    finally:
+        srv.shutdown()
+
+
 def test_sweep_ongoing_unhides_once_the_tab_completes(monkeypatch):
     app, conn = make_app()
     monkeypatch.setattr(api, "fetch_live_tournament",

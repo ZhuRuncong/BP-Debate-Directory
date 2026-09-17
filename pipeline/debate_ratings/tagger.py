@@ -13,6 +13,23 @@ MAXLEN = 64
 MAX_TAGS = 4
 
 
+def mean_pool(h, mask):
+    m = mask.unsqueeze(-1).float()
+    return (h * m).sum(1) / m.sum(1).clamp(min=1e-9)
+
+
+def fetch_model_dir(conn, model):
+    """Write a model's files from Postgres into a temp dir; None if none were uploaded."""
+    files = db.get_model_files(conn, model)
+    if not files:
+        return None
+    tmp = tempfile.mkdtemp(prefix=model + "_")
+    for name, body in files.items():
+        with open(os.path.join(tmp, name), "wb") as f:
+            f.write(body)
+    return tmp
+
+
 class MotionTagger:
     def __init__(self, model_dir):
         import numpy as np
@@ -39,9 +56,7 @@ class MotionTagger:
             for i in range(0, len(texts), batch):
                 b = self.tok(texts[i:i + batch], padding=True, truncation=True,
                              max_length=MAXLEN, return_tensors="pt")
-                h = self.enc(**b).last_hidden_state
-                m = b["attention_mask"].unsqueeze(-1).float()
-                v = (h * m).sum(1) / m.sum(1).clamp(min=1e-9)
+                v = mean_pool(self.enc(**b).last_hidden_state, b["attention_mask"])
                 out.append(torch.sigmoid(self.head(v)).numpy())
         return np.concatenate(out) if out else np.zeros((0, len(self.tags)))
 
@@ -57,24 +72,18 @@ class MotionTagger:
 
     @classmethod
     def from_db(cls, conn):
-        files = db.get_model_files(conn, MODEL_NAME)
-        if not files:
-            return None
-        tmp = tempfile.mkdtemp(prefix="motion_tagger_")
-        for name, body in files.items():
-            with open(os.path.join(tmp, name), "wb") as f:
-                f.write(body)
-        return cls(tmp)
+        path = fetch_model_dir(conn, MODEL_NAME)
+        return cls(path) if path else None
 
 
-def upload(conn, model_dir):
+def upload(conn, model_dir, model=MODEL_NAME, names=MODEL_FILES):
     n = 0
-    for name in MODEL_FILES:
+    for name in names:
         p = os.path.join(model_dir, name)
         if not os.path.exists(p):
             continue
         with open(p, "rb") as f:
-            db.put_model_file(conn, MODEL_NAME, name, f.read())
+            db.put_model_file(conn, model, name, f.read())
         n += 1
     return n
 

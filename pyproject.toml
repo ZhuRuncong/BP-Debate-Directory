@@ -13,6 +13,7 @@ dependencies = [
     "httpx>=0.27",
     "brotli>=1.1",
     "cryptography>=42",
+    "numpy>=1.26",
 ]
 
 [project.optional-dependencies]
