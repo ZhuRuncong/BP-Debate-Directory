@@ -164,6 +164,7 @@ class Inputs:
     used_rows: set
     hidden_players: set
     hidden_insts: set
+    ongoing: list
 
     def pkey(self, name: str, row=None, team=None) -> str:
         k = canon(name)
@@ -211,6 +212,10 @@ def load_inputs(conn) -> Inputs:
         motions_by_row=motions_by_row,
         hidden_players={merges.get(k, k) for k in (hidden.get("players") or [])},
         hidden_insts=set(hidden.get("institutions") or []),
+        # tabs still running, whose rosters this build hides
+        ongoing=sorted(({"n": w.get("name") or root, "u": w.get("url") or root}
+                        for root, w in db.get_artifact(conn, "ongoing_watches", {}).items()),
+                       key=lambda t: t["n"]),
         sco_games=sco_games,
         used_rows=used_rows)
 
@@ -969,6 +974,7 @@ def build(conn, base_tab, abl_tab, occs, texts, built_date, log=print):
             "instAka": aka,
             "instRegion": {k: REGIONS[k] for k in inames if k in REGIONS},
             "sides": SIDES,
+            "ongoing": inp.ongoing,
             "tags": tag_list,
             "jn": jn,
             "jlink": jlink,

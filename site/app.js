@@ -66,6 +66,7 @@ async function boot() {
   loadRest();
   $("loading").remove();
   $("app").style.display = "flex";
+  ongoingNotice();
 
   const mm = $("main");
   document.documentElement.style.setProperty(
@@ -74,6 +75,28 @@ async function boot() {
   lastTier = tierNow();
   const r = location.protocol === "file:" ? { v: "board" } : parsePath(location.pathname);
   go(r.v, r.id, false);
+}
+
+function ongoingNotice() {
+  const list = D.ongoing || [];
+  if (!list.length) return;
+  // dismissal is keyed by the tournaments themselves, so a newly hidden one shows again
+  const key = "notice:" + list.map(t => t.u).sort().join(" ");
+  try { if (localStorage.getItem(key)) return; } catch { /* private mode: just show it */ }
+  const box = document.createElement("div");
+  box.className = "notice";
+  box.innerHTML = `<div class="ncard">
+    <h3>Notice</h3>
+    <p>Debaters at the following tournaments have their profiles temporarily hidden
+       to ensure judging integrity</p>
+    <ul>${list.map(t => `<li><a href="${esc(t.u)}" target="_blank" rel="noopener">${esc(t.u)}</a>${
+      t.n && t.n !== t.u ? ` <span class="mut">${esc(t.n)}</span>` : ""}</li>`).join("")}</ul>
+    <button class="btn" id="nclose">Got it</button></div>`;
+  document.body.appendChild(box);
+  $("nclose").onclick = () => {
+    try { localStorage.setItem(key, "1"); } catch { /* nothing to remember it with */ }
+    box.remove();
+  };
 }
 
 function buildDerived() {

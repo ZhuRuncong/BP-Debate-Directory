@@ -367,6 +367,23 @@ def test_watch_ongoing_hides_the_roster_while_incomplete(monkeypatch):
     assert app.watch_ongoing({"url": ""})[0] == 400
 
 
+def test_a_watched_tournament_reaches_the_payload_for_the_site_notice(monkeypatch):
+    app, conn = make_app()
+    rec = _live_rec("Ongoing Champs", {"A": ["Peer One"]}, complete=False)
+    monkeypatch.setattr(api, "fetch_live_tournament", lambda url: rec)
+    assert app.watch_ongoing({"url": "http://tab.example/onc/results/round/2/"})[0] == 200
+    pipeline.run_pipeline(conn, fit_only=True, log=lambda *a, **k: None)
+    data = json.loads(gzip.decompress(conn.payloads[("data", "gz")][1]))
+    assert data["ongoing"] == [{"n": "Ongoing Champs", "u": "http://tab.example/onc/results/round/2/"}]
+
+    done = _live_rec("Ongoing Champs", {"A": ["Peer One"]}, complete=True)
+    monkeypatch.setattr(api, "fetch_live_tournament", lambda url: done)
+    app.sweep_ongoing(log=lambda *a, **k: None)  # tab finished: notice clears at the next build
+    pipeline.run_pipeline(conn, fit_only=True, log=lambda *a, **k: None)
+    data = json.loads(gzip.decompress(conn.payloads[("data", "gz")][1]))
+    assert data["ongoing"] == []
+
+
 def test_watch_ongoing_is_a_noop_once_already_complete(monkeypatch):
     app, conn = make_app()
     rec = _live_rec("Done Champs", {"A": ["Peer One"]}, complete=True)
