@@ -846,8 +846,9 @@ const BAL_COLS = [
 
   { k: "adj", t: "Evidence", get: x => x.adj == null ? null : -x.adj },
 ];
-let balRows = [], balInfoOpen = -1;
-function toggleBalInfo(i) { balInfoOpen = balInfoOpen === i ? -1 : i; fillBalance(); }
+const BAL_PAGE = 300;
+let balRows = [], balInfoOpen = -1, balShown = 0;
+function toggleBalInfo(i) { balInfoOpen = balInfoOpen === i ? -1 : i; fillBalance(balShown); }
 
 function similarPanel(r) {
   const lst = (D.nbr || [])[r.mi] || [];
@@ -870,7 +871,25 @@ function similarPanel(r) {
       <th>Motion</th><th class="n">Gov</th><th class="n">Opp</th>
       <th class="n">Balance</th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
-function fillBalance() {
+const fvBal = v => v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}`;
+function balRowsHtml(from, to) {
+  const ncol = BAL_COLS.length + 1;
+  return balRows.slice(from, to).map((r, k) => { const i = from + k; return `<tr>
+    <td><a href="#" data-bi="${i}">${esc(r.text)}</a>
+      <div class="sub mut">${r.occ.map(o =>
+        `<a href="#" data-t="${o.ti}">${esc(T[o.ti].n)}</a> &middot; ${esc(o.rname)}`).join(", ")}</div></td>${
+      BAL_COLS.map(c => `<td class="n">${fvBal(c.get(r))}</td>`).join("")}</tr>${
+      i === balInfoOpen ? `<tr><td colspan="${ncol}">
+        <div class="motion">${r.info ? `<b>Infoslide</b><div class="info">${esc(r.info)}</div>` : ""}${
+        similarPanel(r)}</div></td></tr>` : ""}`; }).join("");
+}
+function growBalance() {
+  if (balShown >= balRows.length) return;
+  const to = Math.min(balShown + BAL_PAGE, balRows.length);
+  $("balbody").insertAdjacentHTML("beforeend", balRowsHtml(balShown, to));
+  balShown = to;
+}
+function fillBalance(shown) {
   const rows = buildBalance();
   const col = BAL_COLS.find(c => c.k === balSort.k);
   const sortGet = balSort.k === "mo" ? (x => x.text.toLowerCase())
@@ -883,22 +902,15 @@ function fillBalance() {
   const avg = avgRow(rows);
   $("balcount").textContent = rows.length + " motions";
   const arrow = k => k === balSort.k ? (balSort.dir < 0 ? " ▾" : " ▴") : "";
-  const fv = v => v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}`;
-  const ncol = BAL_COLS.length + 1;
+  // only a screenful is in the DOM; scrolling appends the rest, so typing stays responsive
+  balShown = Math.min(Math.max(shown || 0, BAL_PAGE), rows.length);
   $("baltbl").innerHTML = `<table class="d"><thead><tr>
     <th data-bs="mo">Motion${balSort.k === "rel" ? ' <span class="mut">by relevance</span>' : arrow("mo")}</th>${
     BAL_COLS.map(c => `<th class="n" data-bs="${c.k}">${c.t}${arrow(c.k)}</th>`).join("")}
-  </tr></thead><tbody>
+  </tr></thead><tbody id="balbody">
     <tr class="avgrow"><td class="mut">Average (${rows.length} motions)</td>${
-      BAL_COLS.map(c => `<td class="n">${fv(c.get(avg))}</td>`).join("")}</tr>
-    ${rows.map((r, i) => `<tr>
-    <td><a href="#" data-bi="${i}">${esc(r.text)}</a>
-      <div class="sub mut">${r.occ.map(o =>
-        `<a href="#" data-t="${o.ti}">${esc(T[o.ti].n)}</a> &middot; ${esc(o.rname)}`).join(", ")}</div></td>${
-      BAL_COLS.map(c => `<td class="n">${fv(c.get(r))}</td>`).join("")}</tr>${
-      i === balInfoOpen ? `<tr><td colspan="${ncol}">
-        <div class="motion">${r.info ? `<b>Infoslide</b><div class="info">${esc(r.info)}</div>` : ""}${
-        similarPanel(r)}</div></td></tr>` : ""}`).join("")}
+      BAL_COLS.map(c => `<td class="n">${fvBal(c.get(avg))}</td>`).join("")}</tr>
+    ${balRowsHtml(0, balShown)}
   </tbody></table>`;
 }
 function renderBalance(m) {
@@ -925,6 +937,9 @@ function renderBalance(m) {
     <div class="tbl" id="baltbl"></div>
   </div>`;
   watchTagf();
+  m.onscroll = () => {
+    if (m.scrollTop + m.clientHeight > m.scrollHeight - 600) growBalance();
+  };
   $("bmq").oninput = () => {
     const q = $("bmq").value.trim().toLowerCase();
     if (q === balMoQ) return;
