@@ -1,97 +1,67 @@
 import json
 import os
-import tempfile
+import random
+import time
+
+import httpx
 
 from . import db
 from .fit import mid
 
-MODEL_NAME = "motion_tagger"
-MODEL_FILES = ("config.json", "model.safetensors", "tokenizer.json",
-               "tokenizer_config.json", "special_tokens_map.json",
-               "head.pt", "report.json")
-MAXLEN = 64
+# the vocabulary; each gloss is what the model is told the tag covers
+TAGS = {
+    "Art": "art, film, music, literature, games, entertainment and pop culture, and how they're made",
+    "Business": "companies, corporate conduct, investors, brands and advertising, consumers",
+    "Criminal Justice": "crime, policing, courts, sentencing, prisons, victims and offenders",
+    "Development": "developing and low/middle-income countries, aid, poverty, growth strategies",
+    "Economics": "markets, taxation, trade, finance, economic systems and macroeconomic policy",
+    "Education": "schools, universities, teaching, curricula, students",
+    "Environment": "climate, conservation, pollution, energy transition, animals and nature",
+    "Feminism": "gender equality, the women's movement, gender roles and norms",
+    "Government": "government itself: political systems and branches (judicial, executive, legislative), "
+                  "elections, systems of rule, parties",
+    "History": "past events or eras, counterfactual history, how the past is remembered or taught",
+    "Hypotheticals": "invented scenarios, fictional characters, 'as X, would you...' role-play, "
+                     "worlds with made-up rules",
+    "Individual choice": "what a person should do with their own life, career, body or beliefs",
+    "International Relations": "relations between states, foreign policy, the EU/UN and other blocs, sanctions",
+    "Labour": "work, workers, unions, jobs, wages, automation's effect on employment",
+    "Media": "journalism, news, social media, influencers, representation in the media",
+    "Medicine": "health, healthcare systems, doctors, drugs, disease, medical and genetic technology",
+    "Military": "war, armed forces, defence, terrorism, armed conflict and weapons",
+    "Narratives": "motions about a trend, narrative, norm or cultural attitude (e.g. 'opposes the "
+                  "romanticisation of...', 'regrets the rise of...') rather than a concrete policy",
+    "Philosophy": "ethics, moral theories, metaphysics, the meaning of life, abstract value questions",
+    "Policy": "a policy a government should adopt; not rules of private bodies (leagues, companies) "
+              "and not how government itself is structured (that is Government)",
+    "Relationships": "family, parenting, dating, friendship, marriage and other personal relationships",
+    "Religion": "religions, faith, churches and religious institutions, God, spirituality",
+    "Rights": "civil and human rights and liberties, bodily autonomy, freedom of speech and movement",
+    "Social justice": "minorities and marginalised groups (LGBTQ+, race, disability, class) and "
+                      "activism for them",
+    "Sport": "sports, athletes, sporting bodies and competitions, e-sports",
+    "Technology": "AI, the internet, digital platforms, tech companies and emerging technology",
+}
 MAX_TAGS = 4
+BATCH = 50
+N_EXAMPLES = 40
+RETRY_WAITS = (10, 30, 60)
+# any OpenAI-compatible chat endpoint; defaults to Gemini's free tier
+BASE_URL = os.environ.get("TAGGER_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai")
+MODEL = os.environ.get("TAGGER_MODEL", "gemini-flash-latest")
+
+PROMPT = """You tag competitive debate motions by topic.
+Tags (use only these, spelled exactly):
+{tags}
+Give each motion 1 to {max_tags} tags, most relevant first. A motion usually gets both its subject (e.g. Economics) and its type (e.g. Policy, Narratives, Hypotheticals) where one fits.
+Examples:
+{examples}
+Reply with only a JSON object mapping each motion's number to its list of tags."""
 
 
-def mean_pool(h, mask):
-    m = mask.unsqueeze(-1).float()
-    return (h * m).sum(1) / m.sum(1).clamp(min=1e-9)
-
-
-def fetch_model_dir(conn, model):
-    """Write a model's files from Postgres into a temp dir; None if none were uploaded."""
-    files = db.get_model_files(conn, model)
-    if not files:
-        return None
-    tmp = tempfile.mkdtemp(prefix=model + "_")
-    for name, body in files.items():
-        with open(os.path.join(tmp, name), "wb") as f:
-            f.write(body)
-    return tmp
-
-
-class MotionTagger:
-    def __init__(self, model_dir):
-        import numpy as np
-        import torch
-        from transformers import AutoModel, AutoTokenizer
-
-        self.np = np
-        self.torch = torch
-        torch.set_num_threads(min(8, os.cpu_count() or 4))
-        rep = json.load(open(os.path.join(model_dir, "report.json"), encoding="utf-8"))
-        self.tags = rep["tags"]
-        self.thresholds = np.array(rep["thresholds"], dtype=np.float32)
-        self.tok = AutoTokenizer.from_pretrained(model_dir)
-        self.enc = AutoModel.from_pretrained(model_dir).eval()
-        self.head = torch.nn.Linear(self.enc.config.hidden_size, len(self.tags))
-        self.head.load_state_dict(
-            torch.load(os.path.join(model_dir, "head.pt"), map_location="cpu")["head"])
-        self.head.eval()
-
-    def scores(self, texts, batch=64):
-        np, torch = self.np, self.torch
-        out = []
-        with torch.no_grad():
-            for i in range(0, len(texts), batch):
-                b = self.tok(texts[i:i + batch], padding=True, truncation=True,
-                             max_length=MAXLEN, return_tensors="pt")
-                v = mean_pool(self.enc(**b).last_hidden_state, b["attention_mask"])
-                out.append(torch.sigmoid(self.head(v)).numpy())
-        return np.concatenate(out) if out else np.zeros((0, len(self.tags)))
-
-    def predict(self, texts, batch=64):
-        np = self.np
-        res = []
-        for p in self.scores(texts, batch=batch):
-            hit = [self.tags[j] for j in np.argsort(-p) if p[j] >= self.thresholds[j]]
-            if not hit:
-                hit = [self.tags[int(np.argmax(p))]]
-            res.append(hit[:MAX_TAGS])
-        return res
-
-    @classmethod
-    def from_db(cls, conn):
-        path = fetch_model_dir(conn, MODEL_NAME)
-        return cls(path) if path else None
-
-
-def upload(conn, model_dir, model=MODEL_NAME, names=MODEL_FILES):
-    n = 0
-    for name in names:
-        p = os.path.join(model_dir, name)
-        if not os.path.exists(p):
-            continue
-        with open(p, "rb") as f:
-            db.put_model_file(conn, model, name, f.read())
-        n += 1
-    return n
-
-
-def untagged_motions(conn):
-    tags = db.get_artifact(conn, "motions_tags", {})
-    clean = db.get_artifact(conn, "motions_clean", {})
-    todo = {}
+def motion_texts(conn):
+    """Every motion seen in raw_motions, keyed by motion id."""
+    texts = {}
     with conn.cursor() as cur:
         cur.execute("SELECT payload FROM raw_motions")
         rows = cur.fetchall()
@@ -99,43 +69,88 @@ def untagged_motions(conn):
         if not seqs or seqs.get("_err"):
             continue
         for ms in seqs.values():
-            if not isinstance(ms, list):
-                continue
-            for mo in ms:
-                if not isinstance(mo, dict):
-                    continue
-                t = (mo.get("t") or "").strip()
-                if not t:
-                    continue
-                k = mid(t)
-                if k in tags or k in todo:
-                    continue
-                c = clean.get(k)
-                if c and c.get("skip"):
-                    continue
-                todo[k] = t
-    return todo
+            for mo in ms if isinstance(ms, list) else []:
+                t = (mo.get("t") or "").strip() if isinstance(mo, dict) else ""
+                if t:
+                    texts.setdefault(mid(t), t)
+    return texts
 
 
-def tag_new_motions(conn, log=print):
-    todo = untagged_motions(conn)
+def untagged_motions(conn, texts=None):
+    tags = db.get_artifact(conn, "motions_tags", {})
+    clean = db.get_artifact(conn, "motions_clean", {})
+    texts = motion_texts(conn) if texts is None else texts
+    return {k: t for k, t in texts.items()
+            if k not in tags and not (clean.get(k) or {}).get("skip")}
+
+
+def build_prompt(hand, texts):
+    """System prompt of the tag glosses plus a sample of hand-labelled motions as examples."""
+    labelled = sorted(k for k in hand if k in texts)
+    sample = random.Random(0).sample(labelled, min(N_EXAMPLES, len(labelled)))
+    examples = "\n".join("%s -> %s" % (texts[k], json.dumps(hand[k])) for k in sample)
+    tags = "\n".join("- %s: %s" % kv for kv in TAGS.items())
+    return PROMPT.format(tags=tags, max_tags=MAX_TAGS, examples=examples)
+
+
+def parse_tags(reply, n):
+    """Keep only known tags, capped; a motion the model skipped or garbled is left for next run."""
+    body = reply.strip().removeprefix("```json").removeprefix("```").removesuffix("```")
+    got = json.loads(body)
+    out = {}
+    for i in range(n):
+        tg = [t for t in got.get(str(i + 1)) or [] if t in TAGS]
+        if tg:
+            out[i] = list(dict.fromkeys(tg))[:MAX_TAGS]
+    return out
+
+
+def ask(client, key, system, texts):
+    user = "\n".join("%d. %s" % (i + 1, t) for i, t in enumerate(texts))
+    body = {"model": MODEL, "temperature": 0, "response_format": {"type": "json_object"},
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
+    for wait in RETRY_WAITS + (None,):
+        r = client.post(BASE_URL + "/chat/completions", headers={"Authorization": "Bearer " + key}, json=body)
+        # free tiers answer 429/503 when busy; these usually clear within a minute
+        if r.status_code not in (429, 503) or wait is None:
+            break
+        time.sleep(wait)
+    r.raise_for_status()
+    return r.json()["choices"][0]["message"]["content"]
+
+
+def tag_new_motions(conn, log=print, client=None):
+    texts = motion_texts(conn)
+    todo = untagged_motions(conn, texts)
     if not todo:
         log("motion tagging: nothing new to tag")
         return 0
-    try:
-        tagger = MotionTagger.from_db(conn)
-    except ImportError:
-        log("motion tagging: torch/transformers unavailable, %d motions left untagged"
-            % len(todo))
+    key = os.environ.get("TAGGER_API_KEY", "")
+    if not key:
+        log("motion tagging: TAGGER_API_KEY unset, %d motions left untagged" % len(todo))
         return 0
-    if tagger is None:
-        log("motion tagging: no model uploaded, %d motions left untagged" % len(todo))
+    hand = db.get_artifact(conn, "motions_tags_hand", {})
+    if not hand:
+        log("motion tagging: no hand-labelled motions to take tags from, %d left untagged" % len(todo))
         return 0
-    keys = list(todo)
-    preds = tagger.predict([todo[k] for k in keys])
+    # hand labels are keyed by the cleaned text
+    clean = {mid(v["t"]): v["t"] for v in db.get_artifact(conn, "motions_clean", {}).values() if v.get("t")}
+    system = build_prompt(hand, {**texts, **clean})
     tags = db.get_artifact(conn, "motions_tags", {})
-    for k, tg in zip(keys, preds, strict=True):
-        tags[k] = tg
-    db.set_artifact(conn, "motions_tags", tags)
-    log("motion tagging: tagged %d new motions" % len(keys))
-    return len(keys)
+    keys, done = list(todo), 0
+    client = client or httpx.Client(timeout=120)
+    for i in range(0, len(keys), BATCH):
+        chunk = keys[i:i + BATCH]
+        try:
+            got = parse_tags(ask(client, key, system, [todo[k] for k in chunk]), len(chunk))
+        except (httpx.HTTPError, ValueError, KeyError, AttributeError) as e:
+            # stop rather than hammer a rate-limited free tier; the rest go next run
+            log("motion tagging: batch failed (%s), %d motions left for next run" % (e, len(keys) - i))
+            break
+        for j, tg in got.items():
+            tags[chunk[j]] = tg
+        done += len(got)
+        db.set_artifact(conn, "motions_tags", tags)
+    log("motion tagging: tagged %d new motions" % done)
+    return done
+

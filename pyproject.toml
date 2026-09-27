@@ -18,7 +18,6 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["ruff>=0.5", "pytest>=8"]
-ml = ["torch>=2.2", "transformers>=4.40", "numpy>=1.26"]
 
 [tool.setuptools.packages.find]
 where = ["pipeline"]
