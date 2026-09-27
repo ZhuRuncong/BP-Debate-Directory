@@ -198,3 +198,38 @@ def test_refit_option_bypasses_the_cache(monkeypatch):
     calls = _count_fits(monkeypatch)
     pipeline.run_pipeline(conn, fit_only=True, refit=True, log=QUIET)
     assert len(calls) == 2
+
+
+def published_players(conn):
+    return json.loads(gzip.decompress(conn.payloads[("data", "gz")][1]))
+
+
+def test_merging_keeps_every_other_id_and_redirects_the_merged_one():
+    conn = world.make_conn()
+    pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
+    before = published_players(conn)
+    names = [p[0] for p in before["players"]]
+    root, alias = names.index("Ann Alpha"), names.index("Pat Cape")
+    assert before["moved"] == {}
+    conn.artifacts["id_merges"]["pat cape"] = "ann alpha"
+    pipeline.run_pipeline(conn, fit_only=True, publish_anyway=True, log=QUIET)
+    after = published_players(conn)
+    assert after["moved"] == {str(alias): root}
+    assert len(after["players"]) == len(names)
+    for i, name in enumerate(names):
+        if i != alias:
+            assert after["players"][i][0] == name
+    assert after["players"][alias][0] == payload.HIDDEN_NAME
+
+
+def test_ids_are_only_handed_out_once_published():
+    conn = world.make_conn()
+    pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
+    ids = conn.artifacts[payload.PLAYER_IDS]
+    assert len(ids) == len(published_players(conn)["players"])
+    conn.snapshots.append((datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=1),
+                           10000, 10000, "{}"))
+    conn.artifacts["id_merges"]["pat cape"] = "ann alpha"
+    with pytest.raises(pipeline.SanityError):
+        pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
+    assert conn.artifacts[payload.PLAYER_IDS] == ids

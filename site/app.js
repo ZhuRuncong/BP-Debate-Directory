@@ -1192,16 +1192,28 @@ function pathFor(v, id) {
   return ROUTES[v] || "/";
 }
 let slugIdx = null;
+// a slug two profiles share names neither of them (-1)
 function bySlug(kind, sl) {
   if (!slugIdx) {
-    slugIdx = { player: new Map(), tour: new Map() };
-    P.forEach((p, i) => { const k = slug(p[0]); if (!slugIdx.player.has(k)) slugIdx.player.set(k, i); });
-    T.forEach((t, i) => { const k = slug(t.n); if (!slugIdx.tour.has(k)) slugIdx.tour.set(k, i); });
+    const add = (m, k, i) => m.set(k, m.has(k) && m.get(k) !== i ? -1 : i);
+    const names = new Map(), alts = new Map(), tours = new Map();
+    P.forEach((p, i) => { add(names, slug(p[0]), i); aliasOf(i).forEach(a => add(alts, slug(a), i)); });
+    T.forEach((t, i) => add(tours, slug(t.n), i));
+    // an old name now only an alias still finds its profile, unless someone carries it as their name
+    alts.forEach((i, k) => { if (!names.has(k)) names.set(k, i); });
+    slugIdx = { player: names, tour: tours };
   }
-  return slugIdx[kind].get(sl);
+  const i = slugIdx[kind].get(sl);
+  return i === undefined || i < 0 ? undefined : i;
 }
 function resolve(kind, raw, sl) {
-  const n = +raw, arr = kind === "player" ? P : T;
+  let n = +raw;
+  const arr = kind === "player" ? P : T;
+  if (kind === "player" && D.moved) {
+    // a merged-away profile's link goes to the profile it was merged into
+    for (let k = 0; k < 8 && D.moved[n] != null; k++) n = D.moved[n];
+    if (n !== +raw && arr[n]) return n;
+  }
   const nameOf = i => kind === "player" ? P[i][0] : T[i].n;
   if (arr[n] && (!sl || slug(nameOf(n)) === sl)) return n;
   const hit = sl ? bySlug(kind, sl) : undefined;
@@ -1250,9 +1262,10 @@ function go(v, id, push = true) {
             : v === "inst" ? "insts" : v === "judge" ? "judges" : v;
   document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.v === tab));
   document.title = titleFor(v, id);
-  if (push && location.protocol !== "file:") {
+  if (location.protocol !== "file:") {
     const p = pathFor(v, id);
-    if (p !== location.pathname) history.pushState({ from }, "", p);
+    // an old or merged-away link is rewritten to the one worth sharing
+    if (p !== location.pathname) push ? history.pushState({ from }, "", p) : history.replaceState(history.state, "", p);
   }
   render();
 }
@@ -1388,6 +1401,7 @@ function wire() {
       return -1;
     };
     for (const d of derived) {
+      if (!d.nt) continue;  // hidden and retired slots
       const r = match(d.lname, aliasOf(d.i));
       if (r >= 0) hits.push({ v: "player", id: d.i, rank: r, sort: d.mu == null ? -99 : ratingOf(d).val,
                               label: d.name, meta: `${d.nt}T`, right: d.mu == null ? "—" : k1(ratingOf(d).val) });

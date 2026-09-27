@@ -68,7 +68,7 @@ def rebuild(conn, log=log, publish_anyway=False, refit=False):
 
     built_at = datetime.datetime.now(datetime.UTC)
     built_date = built_at.date().isoformat()
-    data, rest, rows_b, rows_a = payload.build(
+    data, rest, rows_b, rows_a, ids = payload.build(
         conn, base_tab, abl_tab, occs, texts, built_date, log=log)
 
     problems = publish_gate(conn, n_rooms, len(rows_b))
@@ -77,7 +77,7 @@ def rebuild(conn, log=log, publish_anyway=False, refit=False):
             raise SanityError("refusing to publish: " + "; ".join(problems))
         log("publishing despite: " + "; ".join(problems))
 
-    payload.store(conn, data, rest, built_at)
+    payload.store(conn, data, rest, built_at, ids)
     with conn.cursor() as cur:
         cur.execute(
             "INSERT INTO rating_snapshots (built_at, n_rooms, n_speakers, summary) "

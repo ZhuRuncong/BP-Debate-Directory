@@ -19,7 +19,7 @@ def run_pipeline(conn=None):
     mm, occs, texts = fit.motion_map(conn)
     base_tab = fit.fit(conn, False, mm, log=QUIET)
     abl_tab = fit.fit(conn, True, mm, log=QUIET)
-    data, rest, rows_b, rows_a = payload.build(
+    data, rest, rows_b, rows_a, _ids = payload.build(
         conn, base_tab, abl_tab, occs, texts, "2026-01-01", log=QUIET)
     return conn, data, rest, rows_b
 

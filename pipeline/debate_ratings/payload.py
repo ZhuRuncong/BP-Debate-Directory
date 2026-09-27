@@ -146,6 +146,8 @@ def motion_bias_tables(abl_tab, occs, texts):
 
 
 HIDDEN_NAME = "(hidden)"
+# every profile key ever published, in id order: site links are /debaters/<id>, so ids never move
+PLAYER_IDS = "player_ids"
 
 
 @dataclass
@@ -165,6 +167,7 @@ class Inputs:
     hidden_players: set
     hidden_insts: set
     ongoing: list
+    order: list
 
     def pkey(self, name: str, row=None, team=None) -> str:
         k = canon(name)
@@ -217,7 +220,8 @@ def load_inputs(conn) -> Inputs:
                         for root, w in db.get_artifact(conn, "ongoing_watches", {}).items()),
                        key=lambda t: t["n"]),
         sco_games=sco_games,
-        used_rows=used_rows)
+        used_rows=used_rows,
+        order=db.get_artifact(conn, PLAYER_IDS, []))
 
 
 class PlayerIndex:
@@ -545,10 +549,11 @@ def build_players(w: World, inp: Inputs, base: dict, abl: dict):
             alias_of[rootk].add(nm)
 
     players, aliases = [], {}
-    for k in w.pid.keys:
+    for i, k in enumerate(w.pid.keys):
         b = base.get(k)
         a = abl.get(k)
-        if k in inp.hidden_players:  # keep the slot so every index stays stable
+        # hidden and retired (merged away, or tab removed) profiles keep their slot
+        if k in inp.hidden_players or not w.careers.get(i):
             players.append([HIDDEN_NAME, None, None, None, None, None])
             continue
         base_k = k.split(SPLIT_SEP, 1)[0]
@@ -926,6 +931,8 @@ def build_board(w: World, n_players: int, hidden: set):
 
 def assemble(conn, inp: Inputs) -> World:
     w = World()
+    for k in inp.order:
+        w.pid.id(k)
     fixes = db.get_artifact(conn, "roster_fixes", {})
     with conn.cursor(name="payload_tabs") as cur:
         cur.itersize = 20
@@ -948,6 +955,16 @@ def drop_hidden(w: World, inp: Inputs) -> set:
     return gone
 
 
+def moved_ids(w: World, inp: Inputs) -> dict:
+    """Retired id -> the id its profile was merged into, so old links follow the merge."""
+    out = {}
+    for i, k in enumerate(w.pid.keys):
+        j = w.pid.of.get(inp.merges.get(k, k))
+        if not w.careers.get(i) and j is not None and w.careers.get(j):
+            out[str(i)] = j
+    return out
+
+
 def identities(conn):
     """The profiles, careers and institutions a build would publish, without needing the fits.
 
@@ -964,7 +981,7 @@ def identities(conn):
 
 
 def build(conn, base_tab, abl_tab, occs, texts, built_date, log=print):
-    """Assemble the site payload; returns (data, rest, base rows, ablation rows)."""
+    """Assemble the site payload; returns (data, rest, base rows, ablation rows, player id keys)."""
     inp = load_inputs(conn)
     rows_b = speaker_rows(base_tab, inp.display)
     rows_a = speaker_rows(abl_tab, inp.display)
@@ -986,12 +1003,14 @@ def build(conn, base_tab, abl_tab, occs, texts, built_date, log=print):
     for i in drop_hidden(w, inp):
         cv.pop(i, None)
     board_rows, inst_at, inames, aka = build_board(w, len(players), inp.hidden_insts)
+    moved = moved_ids(w, inp)
 
     data = {"built": built_date,
             "epoch": "2010-01-01",
             "tournaments": w.tours,
             "players": players,
             "aliases": aliases,
+            "moved": moved,
             "board": board_rows,
             "instAt": inst_at,
             "instNames": inames,
@@ -1012,10 +1031,10 @@ def build(conn, base_tab, abl_tab, occs, texts, built_date, log=print):
             "jc": jc}
     log("tournaments %d  players %d  careers %d  curves %d"
         % (len(w.tours), len(players), len(w.careers), len(cv)))
-    return data, rest, rows_b, rows_a
+    return data, rest, rows_b, rows_a, list(w.pid.keys)
 
 
-def store(conn, data, rest, built_at):
+def store(conn, data, rest, built_at, ids):
     """Upsert gzip and brotli bodies; the Go server picks by Accept-Encoding."""
     raws = [(name, json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
             for name, obj in (("data", data), ("rest", rest))]
@@ -1033,4 +1052,6 @@ def store(conn, data, rest, built_at):
                 "SET built_at = EXCLUDED.built_at, body = EXCLUDED.body",
                 (name, encoding, built_at, body))
     conn.commit()
+    # only once published: an unpublished build's ids must not be handed out
+    db.set_artifact(conn, PLAYER_IDS, ids)
     return len(bodies)
