@@ -924,6 +924,45 @@ def build_board(w: World, n_players: int, hidden: set):
     return board_rows, inst_at, inames, aka
 
 
+def assemble(conn, inp: Inputs) -> World:
+    w = World()
+    fixes = db.get_artifact(conn, "roster_fixes", {})
+    with conn.cursor(name="payload_tabs") as cur:
+        cur.itersize = 20
+        cur.execute("SELECT payload FROM raw_tabs ORDER BY row_id")
+        for (rec,) in cur:
+            TabTournament(w, inp, apply_roster_fixes(rec, fixes)).assemble()
+    add_recovered(w, inp)
+    for i in w.careers:
+        w.careers[i].sort(key=lambda e: w.tours[e[0]]["d"])
+    return w
+
+
+def drop_hidden(w: World, inp: Inputs) -> set:
+    gone = {i for i, k in enumerate(w.pid.keys) if k in inp.hidden_players}
+    for i in gone:
+        w.careers.pop(i, None)
+    for car in w.careers.values():
+        for e in car:
+            e[2] = [m for m in e[2] if m not in gone]
+    return gone
+
+
+def identities(conn):
+    """The profiles, careers and institutions a build would publish, without needing the fits.
+
+    Shaped like a payload's (data, rest), plus the profile keys, for automerge."""
+    inp = load_inputs(conn)
+    w = assemble(conn, inp)
+    players, _ = build_players(w, inp, {}, {})
+    drop_hidden(w, inp)
+    board_rows, inst_at, inames, _ = build_board(w, len(players), inp.hidden_insts)
+    data = {"players": players, "tournaments": w.tours, "board": board_rows, "instAt": inst_at,
+            "instNames": inames, "instRegion": {k: REGIONS[k] for k in inames if k in REGIONS}}
+    rest = {"careers": {str(i): w.careers[i] for i in sorted(w.careers)}, "keys": list(w.pid.keys)}
+    return data, rest
+
+
 def build(conn, base_tab, abl_tab, occs, texts, built_date, log=print):
     """Assemble the site payload; returns (data, rest, base rows, ablation rows)."""
     inp = load_inputs(conn)
@@ -933,18 +972,8 @@ def build(conn, base_tab, abl_tab, occs, texts, built_date, log=print):
     abl = ranking_lookup(rows_a)
     bias_by_round, by_text = motion_bias_tables(abl_tab, occs, texts)
 
-    w = World()
-    fixes = db.get_artifact(conn, "roster_fixes", {})
-    with conn.cursor(name="payload_tabs") as cur:
-        cur.itersize = 20
-        cur.execute("SELECT payload FROM raw_tabs ORDER BY row_id")
-        for (rec,) in cur:
-            TabTournament(w, inp, apply_roster_fixes(rec, fixes)).assemble()
-    add_recovered(w, inp)
-
+    w = assemble(conn, inp)
     players, aliases = build_players(w, inp, base, abl)
-    for i in w.careers:
-        w.careers[i].sort(key=lambda e: w.tours[e[0]]["d"])
 
     cv, at = curve_tables(abl_tab, w.pid)
     attach_field_strength(w, at, log)
@@ -954,13 +983,8 @@ def build(conn, base_tab, abl_tab, occs, texts, built_date, log=print):
     neighbours, mids = build_neighbours(balance, inp.neighbors_raw)
     attach_expected_points(w, inp, by_text, at, log)
     jn, jc, jlink = build_judges(w, inp, at)
-    gone = {i for i, k in enumerate(w.pid.keys) if k in inp.hidden_players}
-    for i in gone:
-        w.careers.pop(i, None)
+    for i in drop_hidden(w, inp):
         cv.pop(i, None)
-    for car in w.careers.values():
-        for e in car:
-            e[2] = [m for m in e[2] if m not in gone]
     board_rows, inst_at, inames, aka = build_board(w, len(players), inp.hidden_insts)
 
     data = {"built": built_date,

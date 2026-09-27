@@ -1,7 +1,7 @@
 import datetime
 import json
 
-from . import db, fit, form, ingest, judges, payload, rooms, tagger
+from . import automerge, db, fit, form, ingest, judges, payload, rooms, tagger
 from .settings import MAX_ROOM_DROP, MAX_SPEAKER_DROP
 
 
@@ -57,6 +57,10 @@ def rebuild(conn, log=log, publish_anyway=False, refit=False):
         db.set_artifact(conn, "judges", judges_struct)
         log("judges: %d identities" % len(judges_struct.get("d") or {}))
         n_rooms, scale, stats = rooms.rebuild_all(conn, judges_struct)
+        # new names only show up once their rooms are built; merging them means building again
+        if automerge.run(conn, *payload.identities(conn), log=log):
+            n_rooms, scale, stats = rooms.rebuild_all(conn, judges_struct)
+            stamp = fit.fingerprint(conn, mm)
         log("rooms rebuilt: %d (speak scale %.3f)" % (n_rooms, scale))
         base_tab = fit.fit(conn, False, mm, log=log)
         abl_tab = fit.fit(conn, True, mm, log=log)
