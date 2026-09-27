@@ -3,7 +3,6 @@
 const EPOCH = Date.UTC(2010, 0, 1), DAY = 86400000, ROWH = 30;
 const API = "https://api-production-0108.up.railway.app";
 const ONGOING_API = API + "/ongoing/report";
-const MOTION_SEARCH_API = API + "/motions/search";
 let TODAY = 0;
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -51,9 +50,6 @@ const INST_MINT_DEFAULT = 3;
 let instMinT = INST_MINT_DEFAULT, instFrom = "";
 let balMinRooms = 0, balMinBS = null, balTags = null,
     balSort = { k: "bal", dir: -1 }, balMoQ = "", balTourQ = "";
-// semantic-only hits need this cosine to show; keyword matches always show, boosted in the ranking
-const SEM_MIN = 0.42, LEX_BOOST = 0.2, SEM_DEBOUNCE = 300;
-let balSem = null, semTimer = 0, semSeq = 0;
 let instCache = { key: undefined, rows: null };
 
 async function boot() {
@@ -815,36 +811,16 @@ function mergeByMotion(occs) {
 const occOf = b => ({ ti: b[0], rname: b[1], text: b[2], info: b[3], tags: b[4],
                       rooms: b[5], sides: centre(b.slice(7, 11)), adj: b[11], mi: b[12] });
 const balLex = text => text.toLowerCase().includes(balMoQ);
-const balSemOf = mi => (balSem && balSem.get(D.mids[mi])) || 0;
 function buildBalance() {
   const minBSv = balMinBS == null ? null : balMinBS;
   return mergeByMotion((D.balance || [])
     .filter(b => b[5] >= balMinRooms)
     .filter(b => minBSv == null || (b[6] != null && SCALE(b[6]) >= minBSv))
     .filter(b => b[4].some(t => balTags.has(t)))
-    .filter(b => !balMoQ || balLex(b[2]) || balSemOf(b[12]) >= SEM_MIN)
+    .filter(b => !balMoQ || balLex(b[2]))
     .filter(b => !balTourQ || T[b[0]].n.toLowerCase().includes(balTourQ))
-    .map(occOf))
-    .map(g => Object.assign(g, { rel: balMoQ ? balSemOf(g.mi) + (balLex(g.text) ? LEX_BOOST : 0) : 0 }));
+    .map(occOf));
 }
-function semSearch() {
-  clearTimeout(semTimer);
-  balSem = null;
-  const q = balMoQ, seq = ++semSeq;
-  if (q.length < 2) return;
-  semTimer = setTimeout(async () => {
-    try {
-      const r = await fetch(MOTION_SEARCH_API + "?q=" + encodeURIComponent(q));
-      const hits = r.ok ? (await r.json()).hits : null;
-      if (!hits || seq !== semSeq) return;
-      balSem = new Map(hits);
-      if (view.v === "balance" && $("baltbl")) fillBalance();
-    } catch {
-      // search api unreachable: the keyword matches already shown stand
-    }
-  }, SEM_DEBOUNCE);
-}
-
 let balAllCache = null;
 function balAll() {
   if (!balAllCache) {
@@ -916,9 +892,7 @@ function fillBalance(shown) {
   const rows = buildBalance();
   const col = BAL_COLS.find(c => c.k === balSort.k);
   const sortGet = balSort.k === "mo" ? (x => x.text.toLowerCase())
-    : balSort.k === "rel" ? (x => x.rel) : (col ? col.get : (x => x.bal));
-  // equal relevance (keyword-only, e.g. search api down) falls back to the default balance order
-  if (balSort.k === "rel") rows.sort((a, b) => b.bal - a.bal);
+    : (col ? col.get : (x => x.bal));
   rows.sort((a, b) => { const x = sortGet(a), y = sortGet(b);
     return x === y ? 0 : (x < y ? -1 : 1) * balSort.dir; });
   balRows = rows;
@@ -928,7 +902,7 @@ function fillBalance(shown) {
   // only a screenful is in the DOM; scrolling appends the rest, so typing stays responsive
   balShown = Math.min(Math.max(shown || 0, BAL_PAGE), rows.length);
   $("baltbl").innerHTML = `<table class="d"><thead><tr>
-    <th data-bs="mo">Motion${balSort.k === "rel" ? ' <span class="mut">by relevance</span>' : arrow("mo")}</th>${
+    <th data-bs="mo">Motion${arrow("mo")}</th>${
     BAL_COLS.map(c => `<th class="n" data-bs="${c.k}">${c.t}${arrow(c.k)}</th>`).join("")}
   </tr></thead><tbody id="balbody">
     <tr class="avgrow"><td class="mut">Average (${rows.length} motions)</td>${
@@ -966,11 +940,7 @@ function renderBalance(m) {
   $("bmq").oninput = () => {
     const q = $("bmq").value.trim().toLowerCase();
     if (q === balMoQ) return;
-    // a fresh query ranks by relevance; refining it keeps whatever sort was picked since
-    if (!balMoQ) balSort = { k: "rel", dir: -1 };
-    else if (!q && balSort.k === "rel") balSort = { k: "bal", dir: -1 };
     balMoQ = q;
-    semSearch();
     fillBalance();
   };
   $("btq").oninput = () => { balTourQ = $("btq").value.trim().toLowerCase(); fillBalance(); };
@@ -983,8 +953,6 @@ function renderBalance(m) {
   $("breset").onclick = () => {
     balMinRooms = 0; balMinBS = null; balTags = new Set(D.tags.map((_, i) => i));
     balMoQ = ""; balTourQ = "";
-    semSearch();
-    if (balSort.k === "rel") balSort = { k: "bal", dir: -1 };
     renderBalance(m);
   };
   const syncAll = () => { $("btall").checked = balTags.size === D.tags.length; };

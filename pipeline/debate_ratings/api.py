@@ -6,9 +6,8 @@ import os
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlsplit
 
-from . import db, form, motion_search, pipeline, tabbycat
+from . import db, form, pipeline, tabbycat
 from .idnorm import canon
 from .rooms import TEAM_RENAME, is_anon
 from .settings import FORM_POLL_MINUTES, INGEST_POLL_MINUTES, ONGOING_POLL_MINUTES
@@ -18,8 +17,6 @@ LOG_TAIL = 200
 KINDS = ("player", "institution")
 HIDDEN_EMPTY = {"players": [], "institutions": []}
 ONGOING = "ongoing_watches"
-SEARCH_PATH = "/motions/search"
-MAX_QUERY = 200
 
 
 def utcnow():
@@ -116,7 +113,6 @@ class App:
     def __init__(self, connect=db.connect):
         self.connect = connect
         self.runner = Runner(connect)
-        self.searcher = motion_search.Searcher(connect)
 
     def trigger_run(self, body: dict):
         unknown = set(body) - set(RUN_OPTIONS)
@@ -135,16 +131,6 @@ class App:
 
     def run_status(self):
         return 200, self.runner.status()
-
-    def search_motions(self, q: str):
-        """Public: motion ids ranked by meaning; the site blends these with its own keyword matches."""
-        q = q.strip()
-        if not q or len(q) > MAX_QUERY:
-            return 400, {"error": "q must be 1 to %d characters" % MAX_QUERY}
-        hits = self.searcher.search(q)
-        if hits is None:
-            return 503, {"error": "motion search is not ready"}
-        return 200, {"hits": hits}
 
     def check_requests(self):
         """Start a run when the form has requests to act on or rows to tick."""
@@ -648,10 +634,6 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/health":
             return self.send_json(200, {"ok": True})  # unauthenticated, for probes
-        url = urlsplit(self.path)
-        if url.path == SEARCH_PATH:
-            q = (parse_qs(url.query).get("q") or [""])[0]
-            return self.send_json(*self.app.search_motions(q), cors=True)
         if not self.authorized():
             return self.send_json(401, {"error": "unauthorized"})
         if self.path == "/status":
@@ -773,8 +755,6 @@ def main():
         threading.Thread(target=poll_ongoing, args=(Handler.app, ONGOING_POLL_MINUTES), daemon=True).start()
     if INGEST_POLL_MINUTES > 0:
         threading.Thread(target=poll_ingest, args=(Handler.app, INGEST_POLL_MINUTES), daemon=True).start()
-    # load the search model up front so the first visitor's query isn't the slow one
-    threading.Thread(target=Handler.app.searcher.ready, daemon=True).start()
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     print("admin api listening on :%d" % port, flush=True)
     server.serve_forever()
