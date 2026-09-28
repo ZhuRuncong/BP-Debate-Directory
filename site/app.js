@@ -73,26 +73,36 @@ async function boot() {
   go(r.v, r.id, false);
 }
 
-function ongoingNotice() {
-  const list = D.ongoing || [];
-  if (!list.length) return;
-  // dismissal is keyed by the tournaments themselves, so a newly hidden one shows again
-  const key = "notice:" + list.map(t => t.u).sort().join(" ");
+function showNotice(key, bodyHtml) {
   try { if (localStorage.getItem(key)) return; } catch { /* private mode: just show it */ }
   const box = document.createElement("div");
   box.className = "notice";
-  box.innerHTML = `<div class="ncard">
-    <h3>Notice</h3>
-    <p>Debaters at the following tournaments have their profiles temporarily hidden
-       to ensure judging integrity</p>
-    <ul>${list.map(t => `<li><a href="${esc(t.u)}" target="_blank" rel="noopener">${esc(t.u)}</a>${
-      t.n && t.n !== t.u ? ` <span class="mut">${esc(t.n)}</span>` : ""}</li>`).join("")}</ul>
+  box.innerHTML = `<div class="ncard"><h3>Notice</h3>${bodyHtml}
     <button class="btn" id="nclose">Got it</button></div>`;
   document.body.appendChild(box);
   $("nclose").onclick = () => {
     try { localStorage.setItem(key, "1"); } catch { /* nothing to remember it with */ }
     box.remove();
   };
+}
+
+function ongoingNotice() {
+  const list = D.ongoing || [];
+  if (!list.length) return;
+  // dismissal is keyed by the tournaments themselves, so a newly hidden one shows again
+  showNotice("notice:" + list.map(t => t.u).sort().join(" "), `
+    <p>Debaters at the following tournaments have their profiles temporarily hidden
+       to ensure judging integrity</p>
+    <ul>${list.map(t => `<li><a href="${esc(t.u)}" target="_blank" rel="noopener">${esc(t.u)}</a>${
+      t.n && t.n !== t.u ? ` <span class="mut">${esc(t.n)}</span>` : ""}</li>`).join("")}</ul>`);
+}
+
+const CALICOTAB_ERA = "2021-01-01";
+function legacyNotice(d) {
+  if (!d.first || d.first >= CALICOTAB_ERA) return;
+  showNotice("notice:legacy:" + d.i, `
+    <p>This debater competed before the widespread adoption of Calicotab,
+       so some results from that period may be missing.</p>`);
 }
 
 function buildDerived() {
@@ -421,6 +431,7 @@ function renderPlayer(m, i) {
     ${tagCard(d)}
     ${judgeOf.has(i) ? judgingCareer(judgeOf.get(i)) : ""}
   </div>`;
+  legacyNotice(d);
 }
 function roundsHtml(e, t) {
   return `<div class="rounds">${e[3].map(r => {
