@@ -812,7 +812,10 @@ TOUR_REGION_SHARE = 0.6
 
 
 def regional_teams(w: World, pl: list, teams_of: dict, insts: dict) -> dict:
-    """Rename shared prefixes by tournament region, taken from the field's other institutions."""
+    """Rename shared prefixes by where the debater mostly competes.
+
+    A tournament's region comes from the field's other institutions; the debater's is the most
+    common among their tournaments, so one trip abroad doesn't flip them to the other society."""
     field = collections.defaultdict(collections.Counter)
     for i in pl:
         for e, k in zip(w.careers[i], insts[i]["at"], strict=True):
@@ -821,12 +824,18 @@ def regional_teams(w: World, pl: list, teams_of: dict, insts: dict) -> dict:
     region = {t: c.most_common(1)[0][0] for t, c in field.items()
               if c.most_common(1)[0][1] >= TOUR_REGION_SHARE * sum(c.values())}
 
-    def rename(name, tid):
-        head, _, tail = name.partition(" ")
-        to = REGIONAL_PREFIX.get(head.lower(), {}).get(region.get(tid))
-        return f"{to} {tail}".strip() if to else name
-
-    return {i: [rename(nm, e[0]) for nm, e in zip(teams_of[i], w.careers[i], strict=True)] for i in pl}
+    out = {}
+    for i in pl:
+        names = teams_of[i]
+        heads = [REGIONAL_PREFIX.get(nm.partition(" ")[0].lower()) for nm in names]
+        if not any(heads):
+            out[i] = names
+            continue
+        seen = collections.Counter(region[e[0]] for e in w.careers[i] if e[0] in region)
+        home = seen.most_common(1)[0][0] if seen else None
+        out[i] = [f"{to[home]} {nm.partition(' ')[2]}".strip() if to and home in to else nm
+                  for nm, to in zip(names, heads, strict=True)]
+    return out
 
 
 def weighted_recent_speaks(speaks_desc: list) -> float | None:

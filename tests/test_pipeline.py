@@ -178,18 +178,22 @@ def test_a_hidden_institution_is_never_anyones_primary():
     assert [(r[8], r[9]) for r in rows] == [("Harvard", ["harvard"])] * 4
 
 
-def test_a_shared_team_prefix_splits_by_tournament_region(monkeypatch):
-    # four EDS debaters at two Canadian and two Dutch events, each alongside a local school
+def test_a_shared_team_prefix_splits_by_where_the_debater_mostly_competes(monkeypatch):
+    # three Canadian and three Dutch events, each with a local field; the Ottawa pair
+    # makes one trip to the Netherlands and the Rotterdam pair one to Canada
     monkeypatch.setattr(payload, "REGIONS", {"mcgill": "Americas", "leiden": "Europe", "eds": "Americas"})
     w = payload.World()
-    w.tours = [{"d": "2024-0%d-01" % (t + 1), "rounds": []} for t in range(4)]
-    local = ["McGill", "McGill", "Leiden", "Leiden"]
+    w.tours = [{"d": "2024-0%d-01" % (t + 1), "rounds": []} for t in range(6)]
     for i in range(8):
-        eds = i < 4
-        w.careers[i] = [[t, ("EDS %s" if eds else local[t] + " %s") % "AB"[t % 2], [], []]
-                        for t in range(4)]
-    rows, inst_at, names, _ = payload.build_board(w, 8, set())
-    assert [names.get(k) for k in inst_at[0]] == ["EDS", "EDS", "Erasmus", "Erasmus"]
+        ottawa = i < 4
+        w.careers[i] = [[t, "EDS %s" % "AB"[i % 2], [], []]
+                        for t in sorted((0, 1, 3) if ottawa else (3, 4, 0))]
+    for i in range(8, 12):
+        w.careers[i] = [[t, "%s %s" % ("McGill" if t < 3 else "Leiden", "AB"[i % 2]), [], []]
+                        for t in range(6)]
+    rows, inst_at, names, _ = payload.build_board(w, 12, set())
+    assert [names.get(k) for k in inst_at[0]] == ["EDS"] * 3
+    assert [names.get(k) for k in inst_at[4]] == ["Erasmus"] * 3
 
 
 def test_refit_option_bypasses_the_cache(monkeypatch):
