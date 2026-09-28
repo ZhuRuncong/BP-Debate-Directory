@@ -361,7 +361,7 @@ def test_watch_ongoing_hides_the_roster_while_incomplete(monkeypatch):
     assert code == 200 and out["ongoing"] is True
     assert out["root"] == "http://tab.example/onc"
     assert out["hidden"] == ["peer one", "peer two"]
-    assert conn.artifacts["hidden"]["players"] == ["peer one", "peer two"]
+    assert "hidden" not in conn.artifacts
     watch = conn.artifacts["ongoing_watches"]["http://tab.example/onc"]
     assert watch["players"] == ["peer one", "peer two"] and watch["name"] == "Ongoing Champs"
     assert app.watch_ongoing({"url": ""})[0] == 400
@@ -410,7 +410,7 @@ def test_report_ongoing_gives_sanitized_status_messages(monkeypatch):
                         lambda url: _live_rec("Ongoing Champs", {"A": ["Peer One"]}, complete=False))
     assert app.report_ongoing({"url": "http://tab.example/onc"}) == (
         200, {"status": "success", "message": "hidden until the tournament finishes"})
-    assert conn.artifacts["hidden"]["players"] == ["peer one"]
+    assert conn.artifacts["ongoing_watches"]["http://tab.example/onc"]["players"] == ["peer one"]
 
 
 def test_ongoing_report_is_public_with_cors_and_needs_no_token(monkeypatch):
@@ -440,14 +440,12 @@ def test_sweep_ongoing_unhides_once_the_tab_completes(monkeypatch):
     monkeypatch.setattr(api, "fetch_live_tournament",
                         lambda url: _live_rec("Ongoing Champs", {"A": ["Peer One"]}, complete=False))
     app.watch_ongoing({"url": "http://tab.example/onc"})
-    assert conn.artifacts["hidden"]["players"] == ["peer one"]
     assert app.list_ongoing()[1]["http://tab.example/onc"]["name"] == "Ongoing Champs"
 
     monkeypatch.setattr(api, "fetch_live_tournament",
                         lambda url: _live_rec("Ongoing Champs", {"A": ["Peer One"]}, complete=True))
     res = app.sweep_ongoing(log=lambda *a, **k: None)
     assert res == {"checked": 1, "completed": ["http://tab.example/onc"]}
-    assert conn.artifacts["hidden"]["players"] == []
     assert conn.artifacts["ongoing_watches"] == {}
     assert app.sweep_ongoing() == {"checked": 0, "completed": []}
 
@@ -466,3 +464,23 @@ def test_hiding_a_person_also_hides_their_judging():
     data = json.loads(gzip.decompress(conn.payloads[("data", "gz")][1]))
     assert "Judy Chair" not in data["jn"]
     assert "Cody Chair" in data["jn"]
+
+
+def test_a_finished_tab_never_unhides_a_redacted_debater(monkeypatch):
+    app, conn = make_app()
+    names = lambda: [p[0] for p in json.loads(gzip.decompress(conn.payloads[("data", "gz")][1]))["players"]]
+    conn.artifacts["hidden"] = {"players": ["edward delta"], "institutions": []}
+    monkeypatch.setattr(api, "fetch_live_tournament",
+                        lambda url: _live_rec("Ongoing Champs", {"A": ["Edward Delta", "Ann Alpha"]},
+                                              complete=False))
+    app.watch_ongoing({"url": "http://tab.example/onc"})
+    pipeline.run_pipeline(conn, fit_only=True, log=lambda *a, **k: None)
+    assert "Edward Delta" not in names() and "Ann Alpha" not in names()
+
+    monkeypatch.setattr(api, "fetch_live_tournament",
+                        lambda url: _live_rec("Ongoing Champs", {"A": ["Edward Delta", "Ann Alpha"]},
+                                              complete=True))
+    app.sweep_ongoing(log=lambda *a, **k: None)
+    pipeline.run_pipeline(conn, fit_only=True, publish_anyway=True, log=lambda *a, **k: None)
+    assert "Edward Delta" not in names() and "Ann Alpha" in names()
+    assert conn.artifacts["hidden"]["players"] == ["edward delta"]

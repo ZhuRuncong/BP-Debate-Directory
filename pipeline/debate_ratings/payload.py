@@ -202,6 +202,12 @@ def load_inputs(conn) -> Inputs:
         cur.execute("SELECT DISTINCT row_id FROM rooms")
         used_rows.update(r for (r,) in cur.fetchall())
 
+    watches = db.get_artifact(conn, "ongoing_watches", {})
+    # redactions and running tabs hide people independently; a tab ending unhides only its own
+    hidden_keys = set(hidden.get("players") or [])
+    for w in watches.values():
+        hidden_keys.update(w.get("players") or [])
+
     return Inputs(
         merges=merges,
         id_splits=normalize_splits(db.get_artifact(conn, "id_splits", {})),
@@ -213,11 +219,11 @@ def load_inputs(conn) -> Inputs:
         neighbors_raw=db.get_artifact(conn, "motions_neighbors", {}),
         judges_struct=db.get_artifact(conn, "judges", {}),
         motions_by_row=motions_by_row,
-        hidden_players={merges.get(k, k) for k in (hidden.get("players") or [])},
+        hidden_players={merges.get(k, k) for k in hidden_keys},
         hidden_insts=set(hidden.get("institutions") or []),
         # tabs still running, whose rosters this build hides
         ongoing=sorted(({"n": w.get("name") or root, "u": w.get("url") or root}
-                        for root, w in db.get_artifact(conn, "ongoing_watches", {}).items()),
+                        for root, w in watches.items()),
                        key=lambda t: t["n"]),
         sco_games=sco_games,
         used_rows=used_rows,

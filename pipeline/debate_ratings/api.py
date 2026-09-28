@@ -514,13 +514,10 @@ class App:
             return "complete", None, rec
         root = normalize_tournament_url(url)
         players = sorted({canon(p) for team in rec["teams"].values() for p in team if not is_anon(p)})
+        # the roster is hidden from the watch itself, never via the hidden list: finishing the
+        # tab must not unhide anyone who asked to be hidden for good
         conn = self.connect()
         try:
-            hidden = db.get_artifact(conn, "hidden", dict(HIDDEN_EMPTY))
-            hidden.setdefault("players", [])
-            hidden.setdefault("institutions", [])
-            hidden["players"] = sorted(set(hidden["players"]) | set(players))
-            db.set_artifact(conn, "hidden", hidden)
             watches = db.get_artifact(conn, ONGOING, {})
             watches[root] = {"url": url, "name": rec.get("name") or root,
                              "players": players, "added": utcnow()}
@@ -562,15 +559,13 @@ class App:
             conn.close()
 
     def sweep_ongoing(self, log=print) -> dict:
-        """Re-check every watched tab; unhide its roster once all its rounds have posted."""
+        """Re-check every watched tab; drop the watch, and so unhide its roster, once all its rounds have posted."""
         conn = self.connect()
         try:
             watches = db.get_artifact(conn, ONGOING, {})
             n_checked, completed = len(watches), []
             if not watches:
                 return {"checked": 0, "completed": completed}
-            hidden = db.get_artifact(conn, "hidden", dict(HIDDEN_EMPTY))
-            hidden.setdefault("players", [])
             for root, info in list(watches.items()):
                 try:
                     rec = fetch_live_tournament(info["url"])
@@ -578,12 +573,13 @@ class App:
                     log("ongoing check failed for %s: %s" % (root, e))
                     continue
                 if tournament_is_complete(rec):
-                    hidden["players"] = sorted(set(hidden["players"]) - set(info["players"]))
-                    del watches[root]
                     completed.append(root)
                     log("ongoing tournament complete, unhidden: %s" % info.get("name", root))
             if completed:
-                db.set_artifact(conn, "hidden", hidden)
+                # fetching takes a while; re-read so a watch added meanwhile survives
+                watches = db.get_artifact(conn, ONGOING, {})
+                for root in completed:
+                    watches.pop(root, None)
                 db.set_artifact(conn, ONGOING, watches)
         finally:
             conn.close()
