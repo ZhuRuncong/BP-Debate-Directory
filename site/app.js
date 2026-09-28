@@ -97,7 +97,7 @@ function ongoingNotice() {
       t.n && t.n !== t.u ? ` <span class="mut">${esc(t.n)}</span>` : ""}</li>`).join("")}</ul>`);
 }
 
-const CALICOTAB_ERA = "2019-01-01";
+const CALICOTAB_ERA = "2020-01-01";
 function legacyNotice(d) {
   if (!d.first || d.first >= CALICOTAB_ERA) return;
   showNotice("notice:legacy:" + d.i, `
