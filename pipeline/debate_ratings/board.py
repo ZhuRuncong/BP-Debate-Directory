@@ -71,6 +71,9 @@ def inst_spans(name, reg):
     for L in range(len(w), 0, -1):
         for i in range(len(w) - L + 1):
             k = ' '.join(w[i:i + L])
+            # a one-word alias ("HH") is too easily just a word in a team's name
+            if k not in reg and L > 1:
+                k = INST_ALIAS.get(k, k).lower()
             if k in reg and k not in INST_SKIP:
                 cand.append((L, i, k))
     cand.sort(key=lambda x: (-x[0], x[1]))

@@ -17,6 +17,7 @@ from .idnorm import canon
 from .rooms import (
     SPLIT_SEP,
     apply_roster_fixes,
+    clashing_aliases,
     is_anon,
     keyname,
     norm_name,
@@ -46,8 +47,7 @@ RECOVERED = {90016: ("Thessaloniki WUDC 2016", "2015-12-27"),
              90018: ("Southern African UDC 2018", "2018-07-04"),
              90019: ("Cape Town WUDC 2019", "2018-12-27"),
              90118: ("Novi Sad EUDC 2018", "2018-08-13"),
-             90020: ("Southern African UDC 2017", "2017-07-08"),
-             92020: ("NAUDC 2020", "2020-02-01")}
+             90020: ("Southern African UDC 2017", "2017-07-08")}
 
 
 def day_of(iso: str) -> int:
@@ -146,6 +146,8 @@ def motion_bias_tables(abl_tab, occs, texts):
 
 
 HIDDEN_NAME = "(hidden)"
+# profile key -> the name to show, for people who go by something other than their tab name
+DISPLAY_NAMES = "display_names"
 # every profile key ever published, in id order: site links are /debaters/<id>, so ids never move
 PLAYER_IDS = "player_ids"
 
@@ -156,6 +158,7 @@ class Inputs:
     id_splits: dict
     display: dict
     display_raw: dict
+    renamed: dict
     clean: dict
     extra_motions: dict
     tagged: dict
@@ -169,13 +172,13 @@ class Inputs:
     ongoing: list
     order: list
 
-    def pkey(self, name: str, row=None, team=None) -> str:
+    def pkey(self, name: str, row=None, team=None, unmerged=frozenset()) -> str:
         k = canon(name)
         if row is not None and team is not None:
             tag = self.id_splits.get(str(row), {}).get(keyname(team), {}).get(keyname(name))
             if tag:
                 k = k + SPLIT_SEP + tag
-        return self.merges.get(k, k)
+        return k if k in unmerged else self.merges.get(k, k)
 
 
 def load_inputs(conn) -> Inputs:
@@ -213,6 +216,7 @@ def load_inputs(conn) -> Inputs:
         id_splits=normalize_splits(db.get_artifact(conn, "id_splits", {})),
         display=display,
         display_raw=db.get_artifact(conn, "display_raw", {}),
+        renamed=db.get_artifact(conn, DISPLAY_NAMES, {}),
         clean=db.get_artifact(conn, "motions_clean", {}),
         extra_motions=db.get_artifact(conn, "motions_extra", {}),
         tagged=db.get_artifact(conn, "motions_tags", {}),
@@ -260,6 +264,19 @@ class World:
     row_of_tid: dict = field(default_factory=dict)
 
 
+def placings_first(games: list) -> list:
+    return sorted(games, key=lambda g: g["obs"] == "C")
+
+
+def add_speaks(rounds: list, ri: int, val: float) -> None:
+    """A round's speaks join its placing when both were recorded, as one round, not two."""
+    for r in rounds:
+        if r[0] == ri and r[3] is None:
+            r[3] = val
+            return
+    rounds.append([ri, -1, -1, val])
+
+
 class TabTournament:
     def __init__(self, w: World, inp: Inputs, rec: dict):
         self.w = w
@@ -272,6 +289,7 @@ class TabTournament:
         self.prelim_seqs = prelim_seq_list(rec)
         self.teams = team_rosters(rec)
         self.spk = speaks_by_team(rec)
+        self.unmerged = clashing_aliases(rec, inp.merges)
         self.rmeta = []
         self.rp = {}
         self.tp = {}
@@ -350,7 +368,7 @@ class TabTournament:
         rank_of = {v: i for i, v in enumerate(sorted({e[3] for e in ents}))}
         room_acc = []
         for tk, traw, roster, sort, side in ents:
-            pids = [self.w.pid.id(self.inp.pkey(p, self.row, tk)) for p in roster if not is_anon(p)]
+            pids = [self.w.pid.id(self.inp.pkey(p, self.row, tk, self.unmerged)) for p in roster if not is_anon(p)]
             acc = None
             if is_prelim:
                 acc = {"refs": [], "pids": pids, "side": side}
@@ -368,7 +386,7 @@ class TabTournament:
             for p in roster:
                 if is_anon(p):
                     continue
-                i = self.w.pid.id(self.inp.pkey(p, self.row, tk))
+                i = self.w.pid.id(self.inp.pkey(p, self.row, tk, self.unmerged))
                 e = self.tp.get(i)
                 if e is None:
                     team = (self.rec.get("team_names") or {}).get(tk) or norm_name(traw or tk)
@@ -389,12 +407,12 @@ class TabTournament:
                     acc["refs"].append(e["r"][-1])
                 for q in roster:
                     if q is not p and not is_anon(q):
-                        e["mates"][self.inp.pkey(q, self.row, tk)] += 1
+                        e["mates"][self.inp.pkey(q, self.row, tk, self.unmerged)] += 1
         if is_prelim and len(room_acc) >= 2:
             self.w.rooms_pp.append((self.tid, ridx, room_acc))
 
     def apply_sco_games(self) -> None:
-        for g in (self.inp.sco_games.get(self.row) or []):
+        for g in placings_first(self.inp.sco_games.get(self.row) or []):
             ri = self.sco_ridx.get(g["seq"])
             if ri is None:
                 continue
@@ -412,7 +430,7 @@ class TabTournament:
             for k in team:
                 if k.startswith("anon::"):
                     continue
-                self.sco_entry(k)["r"].append([ri, -1, -1, round(float(val), 2)])
+                add_speaks(self.sco_entry(k)["r"], ri, round(float(val), 2))
         if len(g["c"]) == 2 and all(len(t) == 1 for t in g["c"]):
             a, b = g["c"][0][0], g["c"][1][0]
             if not a.startswith("anon::") and not b.startswith("anon::"):
@@ -509,7 +527,7 @@ def add_recovered(w: World, inp: Inputs) -> None:
                           nm, None, "", ms])
         sidx = {s: i for i, s in enumerate(seqs)}
         tp = {}
-        for g in gs:
+        for g in placings_first(gs):
             ri = sidx[g["seq"]]
             if g["obs"] == "C":
                 for team, val in zip(g["c"], g["r"], strict=False):
@@ -518,7 +536,7 @@ def add_recovered(w: World, inp: Inputs) -> None:
                             continue
                         e = tp.setdefault(w.pid.id(k), {"team": "", "mates":
                                           collections.Counter(), "r": []})
-                        e["r"].append([ri, -1, -1, round(float(val), 2)])
+                        add_speaks(e["r"], ri, round(float(val), 2))
                 if len(g["c"]) == 2 and all(len(t) == 1 for t in g["c"]):
                     a, b = g["c"][0][0], g["c"][1][0]
                     if not a.startswith("anon::") and not b.startswith("anon::"):
@@ -563,8 +581,10 @@ def build_players(w: World, inp: Inputs, base: dict, abl: dict):
             players.append([HIDDEN_NAME, None, None, None, None, None])
             continue
         base_k = k.split(SPLIT_SEP, 1)[0]
-        disp = inp.display.get(k) or inp.display.get(base_k) or base_k.title()
-        alt = sorted(n for n in alias_of.get(k, ()) if n.casefold() != disp.casefold())
+        natural = inp.display.get(k) or inp.display.get(base_k) or base_k.title()
+        disp = inp.renamed.get(k) or natural
+        # a renamed profile stays findable by the name on its tabs
+        alt = sorted(n for n in alias_of.get(k, set()) | {natural} if n.casefold() != disp.casefold())
         if alt:
             aliases[str(len(players))] = alt
         if b:
@@ -813,8 +833,15 @@ def build_judges(w: World, inp: Inputs, at: dict):
 
 # Team-name prefixes two societies share, resolved by where the team debated:
 # Ottawa's English Debating Society and Rotterdam's Erasmus Debating Society both enter as "EDS".
-REGIONAL_PREFIX = {"eds": {"Europe": "Erasmus"}}
+# "NWU" is North-West University in South Africa, and other universities in China and the Philippines.
+REGIONAL_PREFIX = {"eds": {"Europe": "Erasmus"}, "nwu": {"Africa": "North West - Potch"}}
 TOUR_REGION_SHARE = 0.6
+
+
+def named_campus(team: str) -> bool:
+    """"NWU Vaal 3" already says which NWU it is; only a bare prefix needs the region."""
+    two = " ".join(team.lower().split()[:2])
+    return two in REGIONS or two in board.INST_ALIAS
 
 
 def regional_teams(w: World, pl: list, teams_of: dict, insts: dict) -> dict:
@@ -833,7 +860,8 @@ def regional_teams(w: World, pl: list, teams_of: dict, insts: dict) -> dict:
     out = {}
     for i in pl:
         names = teams_of[i]
-        heads = [REGIONAL_PREFIX.get(nm.partition(" ")[0].lower()) for nm in names]
+        heads = [None if named_campus(nm) else REGIONAL_PREFIX.get(nm.partition(" ")[0].lower())
+                 for nm in names]
         if not any(heads):
             out[i] = names
             continue

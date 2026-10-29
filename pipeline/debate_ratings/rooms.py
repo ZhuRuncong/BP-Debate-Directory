@@ -115,6 +115,31 @@ def resolve_roster(entry: dict, teams: dict, spk_by_team: dict) -> tuple[str, li
     return tk, [p for p in dict.fromkeys(roster or []) if p][:6]
 
 
+def clashing_aliases(rec: dict, merges: dict) -> set:
+    """Merge aliases that would put one person on two teams in the same round here.
+
+    Merges are global, but a bare "Abid" merged into "Abid Zafar" is someone else
+    wherever the real Abid Zafar debates for another team at the same time; there the
+    alias stays unmerged. Switching teams between rounds is allowed."""
+    teams, spk = team_rosters(rec), speaks_by_team(rec)
+    # rooms name teams consistently; the team list may spell the same team out in full
+    rounds = []
+    for rd in rec.get("rounds") or []:
+        rounds.append([resolve_roster(x, teams, spk) for rm in rd.get("rooms") or [] for x in rm])
+    if not any(rounds):
+        rounds = [list(teams.items())]
+    out = set()
+    for entries in rounds:
+        owners = collections.defaultdict(set)
+        for tk, names in entries:
+            for p in names:
+                if not is_anon(p):
+                    owners[merges.get(canon(p), canon(p))].add(tk)
+        out.update(canon(p) for _tk, names in entries for p in names
+                   if canon(p) in merges and len(owners[merges[canon(p)]]) > 1)
+    return out
+
+
 TEAM_RENAME = "@team"
 
 
@@ -182,6 +207,7 @@ class Builder:
         self.stats = collections.Counter()
         self.speak_devs = []
         self.display = {}
+        self.unmerged = set()
 
     def pkey(self, s, row=None, team=None):
         if s.startswith("ANON::"):
@@ -191,7 +217,7 @@ class Builder:
             tag = self.id_splits.get(str(row), {}).get(keyname(team), {}).get(keyname(s))
             if tag:
                 k = k + SPLIT_SEP + tag
-        return self.merges.get(k, k)
+        return k if k in self.unmerged else self.merges.get(k, k)
 
     def build_tournament(self, rec: dict) -> list[dict]:
         stats = self.stats
@@ -205,6 +231,9 @@ class Builder:
             return out_rooms
         t = (datetime.date.fromisoformat(date) - EPOCH).days
         teams = team_rosters(rec)
+        self.unmerged = clashing_aliases(rec, self.merges)
+        if self.unmerged:
+            stats["merges withheld (would clash with another team)"] += len(self.unmerged)
         sizes = collections.Counter(len(rm) for rd in (rec.get("rounds") or [])
                                     for rm in (rd.get("rooms") or []))
         if not sizes:

@@ -3,7 +3,7 @@ import gzip
 import json
 
 import pytest
-from debate_ratings import fit, payload, pipeline, priors
+from debate_ratings import board, fit, payload, pipeline, priors
 
 from . import world
 
@@ -237,3 +237,60 @@ def test_ids_are_only_handed_out_once_published():
     with pytest.raises(pipeline.SanityError):
         pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
     assert conn.artifacts[payload.PLAYER_IDS] == ids
+
+
+def test_a_rounds_placing_and_speaks_make_one_round():
+    rounds = []
+    payload.add_speaks(rounds, 0, 77.0)  # speaks only: a round of its own
+    rounds.append([1, 2, -1, None])
+    payload.add_speaks(rounds, 1, 79.0)
+    assert rounds == [[0, -1, -1, 77.0], [1, 2, -1, 79.0]]
+    games = [{"obs": "C"}, {"obs": "O"}]
+    assert [g["obs"] for g in payload.placings_first(games)] == ["O", "C"]
+
+
+def test_bare_nwu_is_the_south_african_one_only_for_debaters_in_africa(monkeypatch):
+    monkeypatch.setattr(payload, "REGIONS", {"wits": "Africa", "fudan": "Asia", "nwu vaal": "Africa"})
+    monkeypatch.setattr(board, "INST_ALIAS", {"nwu potch": "North West - Potch"})
+    w = payload.World()
+    w.tours = [{"d": "2024-0%d-01" % (t + 1), "rounds": []} for t in range(4)]  # two African, two Asian
+    teams = (["NWU %s"] * 4 + ["NWU Potch Leaders of Tomorrow"] * 4 + ["NWU Vaal %s"] * 4
+             + ["Wits %s"] * 4)
+    for i, team in enumerate(teams):
+        w.careers[i] = [[t, team % "AB"[i % 2] if "%" in team else team, [], []] for t in (0, 1)]
+    for i in range(16, 24):
+        w.careers[i] = [[t, ("NWU %s" if i < 20 else "Fudan %s") % "AB"[i % 2], [], []] for t in (2, 3)]
+    rows, inst_at, names, _ = payload.build_board(w, 24, set())
+    assert [names.get(inst_at[i][0]) for i in (0, 4, 8, 16)] == [
+        "North West - Potch", "North West - Potch", "NWU Vaal", "NWU"]
+
+
+def test_a_merge_never_puts_one_person_on_two_teams():
+    # like a bare "Abid" merged into "Abid Zafar": at this tab Gus Beta is someone else
+    conn = world.make_conn()
+    conn.artifacts["id_merges"]["gus beta"] = "ann alpha"
+    pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
+    data = published_players(conn)
+    rest = json.loads(gzip.decompress(conn.payloads[("rest", "gz")][1]))
+    names = [p[0] for p in data["players"]]
+    assert "Gus Beta" in names
+    ann = rest["careers"][str(names.index("Ann Alpha"))]
+    tab = [e for e in ann if e[1] == "Alpha A"]
+    assert len(tab) == 1 and "Gus Beta" not in [names[m] for m in tab[0][2]]
+    assert not any(e[1] == "Beta B" for e in ann)
+    keys = [[k for t in room["teams"] for k in t["roster"]] for (_r, _t, _s, room) in conn.rooms]
+    assert all(ks.count("ann alpha") <= 1 for ks in keys)
+    assert any("gus beta" in ks for ks in keys)
+    assert any("edward delta" in ks for ks in keys)  # a merge with no clash still applies
+
+
+def test_a_profile_can_be_shown_under_the_name_it_goes_by():
+    conn = world.make_conn()
+    pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
+    before = [p[0] for p in published_players(conn)["players"]]
+    conn.artifacts[payload.DISPLAY_NAMES] = {"ann alpha": "Annie"}
+    pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
+    data = published_players(conn)
+    i = before.index("Ann Alpha")
+    assert data["players"][i][0] == "Annie"  # same id, new name
+    assert "Ann Alpha" in data["aliases"][str(i)]
