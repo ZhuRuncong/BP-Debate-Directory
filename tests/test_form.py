@@ -143,11 +143,11 @@ def test_merge_goes_ahead_without_unmatched_names():
     assert out["note"] == "not on the site: Nobody Here"
 
 
-def test_merge_never_keeps_a_bare_first_name():
+def test_merge_keeps_the_leftmost_name():
     conn = published()
     [req] = sheet(row("1", "Merge", "Ann", "Ann Cape"))
     assert form.apply(conn, [req], log=QUIET) == 1
-    assert outcome(conn, req)["merged"] == {"ann": "ann cape"}
+    assert outcome(conn, req)["merged"] == {"ann cape": "ann"}
 
 
 def test_merge_flags_evidence_of_two_people_but_still_merges():
@@ -231,6 +231,6 @@ def test_merge_flags_but_applies_differently_accented_names():
     [req] = sheet(row("1", "Merge", "Zoë Cape", "Zoè Cape"))
     assert form.apply(conn, [req], log=QUIET) == 1  # not live yet, but applied
     out = outcome(conn, req)
-    assert out["status"] == "review" and out["merged"] == {"zoë cape": "zoè cape"}
+    assert out["status"] == "review" and out["merged"] == {"zoè cape": "zoë cape"}
     note = out["note"]
     assert note.endswith("are differently accented") and "zoë cape" in note and "zoè cape" in note

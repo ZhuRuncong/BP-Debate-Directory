@@ -294,3 +294,49 @@ def test_a_profile_can_be_shown_under_the_name_it_goes_by():
     i = before.index("Ann Alpha")
     assert data["players"][i][0] == "Annie"  # same id, new name
     assert "Ann Alpha" in data["aliases"][str(i)]
+
+
+def test_untitled_elim_rounds_get_their_bracket_and_depth_from_the_teams():
+    conn = world.make_conn()
+    rec = conn.raw_tabs[10]
+
+    def rm(*teams, wins=2):  # the first `wins` teams advance; a final has one winner
+        return world.room(*((t, 2 if k < wins else 1, sd) for k, (t, sd)
+                            in enumerate(zip(teams, ("OG", "OO", "CG", "CO"), strict=True))))
+    rec["rounds"][2:] = [
+        {"seq": 3, "rooms": [rm("Alpha A", "Beta A", "Gamma A", "Delta A"),
+                             rm("Alpha B", "Beta B", "Gamma B", "Delta B")]},
+        {"seq": 4, "rooms": [rm("Alpha A", "Beta A", "Alpha B", "Beta B", wins=1)]},
+        {"seq": 5, "rooms": [rm("Gamma A", "Delta A", "Gamma B", "Delta B", wins=1)]},
+    ]
+    pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
+    rounds = published_players(conn)["tournaments"][0]["rounds"]
+    assert [r[:5] for r in rounds if r[1] == "E"] == [[3, "E", "Semifinals", 1, "Open"],
+                                                      [4, "E", "Final", 0, "Open"],
+                                                      [5, "E", "Break 2 Final", 0, "Break 2"]]
+
+
+def test_an_untitled_bracket_missing_its_final_is_not_called_a_final():
+    conn = world.make_conn()
+    rec = conn.raw_tabs[10]
+    rooms = [world.room(("Alpha A", 2, "OG"), ("Beta A", 2, "OO"), ("Gamma A", 1, "CG"), ("Delta A", 1, "CO")),
+             world.room(("Alpha B", 2, "OG"), ("Beta B", 2, "OO"), ("Gamma B", 1, "CG"), ("Delta B", 1, "CO"))]
+    rec["rounds"][2:] = [{"seq": 3, "rooms": rooms}]  # two rooms advancing two each: semis
+    pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
+    rounds = published_players(conn)["tournaments"][0]["rounds"]
+    assert [r[2:5] for r in rounds if r[1] == "E"] == [["Semifinals", 1, "Open"]]
+
+
+def test_a_gold_final_decides_the_title_when_there_is_no_open_break():
+    conn = world.make_conn()
+    rec = conn.raw_tabs[10]
+    rec["rounds"][2]["name"] = "Gold Final"
+    rec["rounds"].append({"seq": 4, "stage": "E", "name": "Silver Final", "rooms": [
+        world.room(("Gamma A", 2, "OG"), ("Delta A", 1, "OO"), ("Beta B", 1, "CG"), ("Delta B", 1, "CO"))]})
+    pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
+    data = published_players(conn)
+    elims = [r[2:5] for r in data["tournaments"][0]["rounds"] if r[1] == "E"]
+    assert elims == [["Gold Final", 0, "Open"], ["Silver Final", 0, "Silver"]]
+    names = [p[0] for p in data["players"]]
+    assert data["board"][names.index("Ann Alpha")][4] == 1  # Alpha A won the gold final: a title
+    assert data["board"][names.index("Ivo Gamma")][4] == 0  # the silver final is not

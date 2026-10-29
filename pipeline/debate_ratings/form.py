@@ -225,7 +225,9 @@ def merge(site: Site, names: list) -> dict:
     found = [site.find(n) for n in names]
     missing = [n for n, f in zip(names, found, strict=True) if not f]
     # unmatched names are usually typos or junk; merge whatever did match
-    keys = list(dict.fromkeys(k for f in found for k in sorted(f)))
+    # each name's exact profile before its accent-insensitive lookalikes, so the leftmost wins
+    keys = list(dict.fromkeys(k for n, f in zip(names, found, strict=True)
+                              for k in sorted(f, key=lambda k: (k != site.key(n), k))))
     out = merge_keys(site, keys)
     if missing:
         out["note"] = "; ".join(filter(None, ["not on the site: " + ", ".join(missing), out.get("note")]))
@@ -250,8 +252,8 @@ def merge_keys(site: Site, keys: list) -> dict:
         if both:
             # one person is never two entries at the same tournament
             notes.append("%s and %s were both at %s" % (a, b, site.tour_names[min(both)]))
-    # The full name used at the most tournaments survives; "Ojas" + "Ojas Date" shows as Ojas Date.
-    target = max(keys, key=lambda k: (len(fold(k).split()) > 1, len(site.tours[k]), -keys.index(k)))
+    # the leftmost name on the request survives; the requester puts the one they want first
+    target = keys[0]
     words = set(fold(target).split())
     strangers = [k for k in keys if not words & set(fold(k).split())]
     if strangers:

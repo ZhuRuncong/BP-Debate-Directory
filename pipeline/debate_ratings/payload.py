@@ -37,6 +37,8 @@ BROTLI_QUALITY = 10
 # Hand-assigned region per institution key; new institutions stay unassigned until added.
 REGIONS = json.loads((Path(__file__).parent / "regions.json").read_text(encoding="utf-8"))
 
+ROUND_NAME = {0: "Final", 1: "Semifinals", 2: "Quarterfinals", 3: "Octofinals",
+              4: "Double-Octofinals", 5: "Triple-Octofinals"}
 DEPTH_LABEL = {0: "Finalist", 1: "Semifinalist", 2: "Quarterfinalist",
                3: "Octofinalist", 4: "Double-Octofinalist",
                5: "Triple-Octofinalist"}
@@ -480,7 +482,56 @@ class TabTournament:
                 if r != keep:
                     self.rmeta[r][4] = division_of(self.rmeta[r][2]) or self.rmeta[r][2]
 
+    def infer_brackets(self) -> None:
+        """Untitled elim rounds ("Round 10") take their bracket from the teams advancing
+        into them and their depth from how far they are from that bracket's final."""
+        chains = []  # [round idxs, teams advancing from the latest, first rooms, teams, latest's depth]
+        for rd in self.rds:
+            ridx = self.w.seq2ridx.get(self.tid, {}).get(str(rd.get("seq")))
+            if (ridx is None or (rd.get("name") or "").strip() or self.rmeta[ridx][1] != "E"
+                    or self.rmeta[ridx][3] is not None):
+                continue
+            rooms_ = [rm for rm in rd.get("rooms") or [] if rm]
+            teams = {keyname(x.get("team")) for rm in rooms_ for x in rm}
+            tops = [[keyname(x.get("team")) for x in rm
+                     if x.get("sort") == max(y.get("sort") or 0 for y in rm)] for rm in rooms_]
+            adv = {t for top in tops for t in top}
+            chain = next((c for c in reversed(chains) if teams & c[1]), None)
+            if chain is None:
+                chain = [[], set(), len(rooms_), set(), 0]
+                chains.append(chain)
+            chain[0].append(ridx)
+            chain[1] = adv
+            chain[3] |= teams
+            # a bracket can stop short of its final in the tab: only one winner per room is a final
+            chain[4] = 0 if all(len(top) == 1 for top in tops) else max(1, len(rooms_).bit_length() - 1)
+        if not chains:
+            return
+        # the biggest bracket is the open break; the rest are divisions the tab never named
+        main = max(chains, key=lambda c: c[2])
+        others = [c for c in chains if c is not main]
+        for n, (idxs, _adv, _rooms, teams, last) in enumerate([main] + others):
+            cat = "Open" if n == 0 else "Break %d" % (n + 1)
+            for depth, ridx in enumerate(reversed(idxs), last):
+                name = ROUND_NAME.get(depth, "Round %d" % self.rmeta[ridx][0])
+                self.rmeta[ridx][2:5] = [name if n == 0 else "%s %s" % (cat, name), depth, cat]
+            if n:
+                self.broke["Open"] -= teams - main[3]
+                self.broke[cat] |= teams
+
+    def gold_is_open(self) -> None:
+        """With gold/silver finals and no open break, the gold final decides the title."""
+        cats = {m[4] for m in self.rmeta if m[1] == "E"}
+        if "Gold" not in cats or "Open" in cats:
+            return
+        for m in self.rmeta:
+            if m[1] == "E" and m[4] == "Gold":
+                m[4] = "Open"
+        self.broke["Open"] |= self.broke.pop("Gold", set())
+
     def finish(self) -> None:
+        self.infer_brackets()
+        self.gold_is_open()
         self.resolve_finals()
         w = self.w
         w.tours.append({"i": self.tid, "row": self.row,
