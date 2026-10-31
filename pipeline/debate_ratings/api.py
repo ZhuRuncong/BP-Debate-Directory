@@ -3,11 +3,13 @@ import hashlib
 import hmac
 import json
 import os
+import subprocess
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import db, form, pipeline, tabbycat
+from . import db, form, job, pipeline, tabbycat
 from .idnorm import canon
 from .rooms import TEAM_RENAME, is_anon
 from .settings import FORM_POLL_MINUTES, INGEST_POLL_MINUTES, ONGOING_POLL_MINUTES
@@ -21,6 +23,10 @@ ONGOING = "ongoing_watches"
 
 def utcnow():
     return datetime.datetime.now(datetime.UTC).isoformat()
+
+
+def job_command(options: dict) -> list:
+    return [sys.executable, "-m", "debate_ratings.job", json.dumps(options)]
 
 
 def norm_key(kind: str, value: str) -> str:
@@ -77,8 +83,9 @@ class Job:
 class Runner:
     """Runs at most one pipeline job at a time on a background thread."""
 
-    def __init__(self, connect):
+    def __init__(self, connect, in_child=False):
         self.connect = connect
+        self.in_child = in_child
         self.lock = threading.Lock()
         self.job = None
 
@@ -87,7 +94,8 @@ class Runner:
             if self.job and self.job.state == "running":
                 return None
             self.job = Job(options)
-            threading.Thread(target=self._run, args=(self.job,), daemon=True).start()
+            target = self._run_child if self.in_child else self._run
+            threading.Thread(target=target, args=(self.job,), daemon=True).start()
             return self.job
 
     def _run(self, job: Job):
@@ -104,15 +112,38 @@ class Runner:
             if conn is not None:
                 conn.close()
 
+    def _run_child(self, run: Job):
+        try:
+            proc = subprocess.Popen(job_command(run.options), stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, encoding="utf-8", errors="replace",
+                                    env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+            for line in proc.stdout:
+                line = line.rstrip("\n")
+                if line.startswith(job.RESULT):
+                    run.result = json.loads(line[len(job.RESULT):])
+                elif line.startswith(job.ERROR):
+                    run.error = line[len(job.ERROR):]
+                else:
+                    run.log(line)
+            code = proc.wait()
+            if code and not run.error:
+                run.error = "job exited with code %d" % code  # killed before it could report
+            run.state = "failed" if run.error else "done"
+        except Exception as e:
+            run.error = "%s: %s" % (type(e).__name__, e)
+            run.state = "failed"
+        finally:
+            run.finished = utcnow()
+
     def status(self) -> dict:
         with self.lock:
             return self.job.status() if self.job else {"state": "idle"}
 
 
 class App:
-    def __init__(self, connect=db.connect):
+    def __init__(self, connect=db.connect, jobs_in_child=False):
         self.connect = connect
-        self.runner = Runner(connect)
+        self.runner = Runner(connect, in_child=jobs_in_child)
 
     def trigger_run(self, body: dict):
         unknown = set(body) - set(RUN_OPTIONS)
@@ -741,7 +772,7 @@ def main():
         print("ADMIN_TOKEN is required", flush=True)
         return 1
     port = int(os.environ.get("PORT", "8090"))
-    Handler.app = App()
+    Handler.app = App(jobs_in_child=True)
     Handler.token = token
     if FORM_POLL_MINUTES > 0 and form.configured():
         threading.Thread(target=poll_form, args=(Handler.app, FORM_POLL_MINUTES), daemon=True).start()

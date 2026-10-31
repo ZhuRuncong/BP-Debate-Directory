@@ -36,6 +36,25 @@ def publish_gate(conn, n_rooms, n_speakers):
     return problems
 
 
+def build_rooms(conn, mm, stamp, log):
+    """Rebuild rooms, settling names on the way; a function so its data is gone before the fits."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT payload FROM raw_judges ORDER BY row_id")
+        judge_records = [p for (p,) in cur.fetchall()]
+    judges_struct = judges.build(judge_records)
+    db.set_artifact(conn, "judges", judges_struct)
+    log("judges: %d identities" % len(judges_struct.get("d") or {}))
+    n_rooms, scale, stats = rooms.rebuild_all(conn, judges_struct)
+    # new names only show up once their rooms are built; merging or splitting them
+    # means building again
+    ident = payload.identities(conn)
+    if automerge.run(conn, *ident, log=log) + splits.run(conn, *ident, log=log):
+        n_rooms, scale, stats = rooms.rebuild_all(conn, judges_struct)
+        stamp = fit.fingerprint(conn, mm)
+    log("rooms rebuilt: %d (speak scale %.3f)" % (n_rooms, scale))
+    return n_rooms, stats, stamp
+
+
 def rebuild(conn, log=log, publish_anyway=False, refit=False):
     tagger.tag_new_motions(conn, log=log)
     mm, occs, texts = fit.motion_map(conn)
@@ -50,20 +69,7 @@ def rebuild(conn, log=log, publish_anyway=False, refit=False):
         stats = db.get_artifact(conn, "rooms_meta", {}).get("stats") or {}
         log("fit inputs unchanged: reusing cached fits over %d rooms" % n_rooms)
     else:
-        with conn.cursor() as cur:
-            cur.execute("SELECT payload FROM raw_judges ORDER BY row_id")
-            judge_records = [p for (p,) in cur.fetchall()]
-        judges_struct = judges.build(judge_records)
-        db.set_artifact(conn, "judges", judges_struct)
-        log("judges: %d identities" % len(judges_struct.get("d") or {}))
-        n_rooms, scale, stats = rooms.rebuild_all(conn, judges_struct)
-        # new names only show up once their rooms are built; merging or splitting them
-        # means building again
-        ident = payload.identities(conn)
-        if automerge.run(conn, *ident, log=log) + splits.run(conn, *ident, log=log):
-            n_rooms, scale, stats = rooms.rebuild_all(conn, judges_struct)
-            stamp = fit.fingerprint(conn, mm)
-        log("rooms rebuilt: %d (speak scale %.3f)" % (n_rooms, scale))
+        n_rooms, stats, stamp = build_rooms(conn, mm, stamp, log)
         base_tab = fit.fit(conn, False, mm, log=log)
         abl_tab = fit.fit(conn, True, mm, log=log)
         fit.save_cache(conn, stamp, base_tab, abl_tab)
