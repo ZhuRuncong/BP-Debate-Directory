@@ -340,3 +340,10 @@ def test_a_gold_final_decides_the_title_when_there_is_no_open_break():
     names = [p[0] for p in data["players"]]
     assert data["board"][names.index("Ann Alpha")][4] == 1  # Alpha A won the gold final: a title
     assert data["board"][names.index("Ivo Gamma")][4] == 0  # the silver final is not
+
+
+def test_a_short_alias_leading_a_long_team_name_is_the_institution(monkeypatch):
+    monkeypatch.setattr(board, "INST_ALIAS", {"uq": "Queensland"})
+    reg = {"queensland": "Queensland"}
+    assert board.inst_spans("UQ Silk Road", reg) == [(0, "queensland")]
+    assert board.inst_spans("Silk Road UQ", reg) == []  # anywhere else it's just a word
