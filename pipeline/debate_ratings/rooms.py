@@ -115,13 +115,21 @@ def resolve_roster(entry: dict, teams: dict, spk_by_team: dict) -> tuple[str, li
     return tk, [p for p in dict.fromkeys(roster or []) if p][:6]
 
 
-def clashing_aliases(rec: dict, merges: dict) -> set:
+def clashing_aliases(rec: dict, merges: dict, splits: dict = None) -> set:
     """Merge aliases that would put one person on two teams in the same round here.
 
     Merges are global, but a bare "Abid" merged into "Abid Zafar" is someone else
     wherever the real Abid Zafar debates for another team at the same time; there the
-    alias stays unmerged. Switching teams between rounds is allowed."""
+    alias stays unmerged. Switching teams between rounds is allowed. `splits` is this tab's
+    {team: {name: tag}}: someone split off to their own person clashes with nobody."""
     teams, spk = team_rosters(rec), speaks_by_team(rec)
+    splits = splits or {}
+
+    def owner(tk, p):
+        k = canon(p)
+        tag = splits.get(tk, {}).get(keyname(p)) or splits.get(tk, {}).get(k)
+        return k + SPLIT_SEP + tag if tag else merges.get(k, k)
+
     # rooms name teams consistently; the team list may spell the same team out in full
     rounds = []
     for rd in rec.get("rounds") or []:
@@ -134,9 +142,10 @@ def clashing_aliases(rec: dict, merges: dict) -> set:
         for tk, names in entries:
             for p in names:
                 if not is_anon(p):
-                    owners[merges.get(canon(p), canon(p))].add(tk)
-        out.update(canon(p) for _tk, names in entries for p in names
-                   if canon(p) in merges and len(owners[merges[canon(p)]]) > 1)
+                    owners[owner(tk, p)].add(tk)
+        out.update(canon(p) for tk, names in entries for p in names
+                   if canon(p) in merges and owner(tk, p) == merges[canon(p)]
+                   and len(owners[merges[canon(p)]]) > 1)
     return out
 
 
@@ -214,7 +223,9 @@ class Builder:
             return s.casefold()
         k = canon(s)
         if row is not None and team is not None:
-            tag = self.id_splits.get(str(row), {}).get(keyname(team), {}).get(keyname(s))
+            names = self.id_splits.get(str(row), {}).get(keyname(team), {})
+            # "Will Ryan💻" on the tab is still the "will ryan" a split names
+            tag = names.get(keyname(s)) or names.get(canon(s))
             if tag:
                 k = k + SPLIT_SEP + tag
         return k if k in self.unmerged else self.merges.get(k, k)
@@ -231,7 +242,7 @@ class Builder:
             return out_rooms
         t = (datetime.date.fromisoformat(date) - EPOCH).days
         teams = team_rosters(rec)
-        self.unmerged = clashing_aliases(rec, self.merges)
+        self.unmerged = clashing_aliases(rec, self.merges, self.id_splits.get(str(row)))
         if self.unmerged:
             stats["merges withheld (would clash with another team)"] += len(self.unmerged)
         sizes = collections.Counter(len(rm) for rd in (rec.get("rounds") or [])

@@ -177,7 +177,9 @@ class Inputs:
     def pkey(self, name: str, row=None, team=None, unmerged=frozenset()) -> str:
         k = canon(name)
         if row is not None and team is not None:
-            tag = self.id_splits.get(str(row), {}).get(keyname(team), {}).get(keyname(name))
+            names = self.id_splits.get(str(row), {}).get(keyname(team), {})
+            # "Will Ryan💻" on the tab is still the "will ryan" a split names
+            tag = names.get(keyname(name)) or names.get(canon(name))
             if tag:
                 k = k + SPLIT_SEP + tag
         return k if k in unmerged else self.merges.get(k, k)
@@ -291,7 +293,7 @@ class TabTournament:
         self.prelim_seqs = prelim_seq_list(rec)
         self.teams = team_rosters(rec)
         self.spk = speaks_by_team(rec)
-        self.unmerged = clashing_aliases(rec, inp.merges)
+        self.unmerged = clashing_aliases(rec, inp.merges, inp.id_splits.get(str(rec["row"])))
         self.rmeta = []
         self.rp = {}
         self.tp = {}

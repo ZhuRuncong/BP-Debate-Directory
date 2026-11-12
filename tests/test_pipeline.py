@@ -347,3 +347,17 @@ def test_a_short_alias_leading_a_long_team_name_is_the_institution(monkeypatch):
     reg = {"queensland": "Queensland"}
     assert board.inst_spans("UQ Silk Road", reg) == [(0, "queensland")]
     assert board.inst_spans("Silk Road UQ", reg) == []  # anywhere else it's just a word
+
+
+def test_someone_split_off_does_not_block_a_merge_at_that_tab():
+    # Gus Beta is split off to his own person at this tab, so "Fay Beta" (merged into Gus) no longer
+    # clashes with him being on Beta B
+    conn = world.make_conn()
+    conn.artifacts["id_merges"]["fay beta"] = "gus beta"
+    pipeline.run_pipeline(conn, fit_only=True, log=QUIET)
+    keys = [[k for t in room["teams"] for k in t["roster"]] for (_r, _t, _s, room) in conn.rooms]
+    assert any("fay beta" in ks for ks in keys)  # clash: withheld
+    conn.artifacts["id_splits"] = {"10": {"Beta B": {"Gus Beta": "x"}}}
+    pipeline.run_pipeline(conn, fit_only=True, publish_anyway=True, log=QUIET)
+    keys = [[k for t in room["teams"] for k in t["roster"]] for (_r, _t, _s, room) in conn.rooms]
+    assert not any("fay beta" in ks for ks in keys) and any("gus beta" in ks for ks in keys)
